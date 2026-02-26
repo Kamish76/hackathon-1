@@ -21,6 +21,27 @@ export async function requireAuthenticatedUser() {
     return { error: NextResponse.json({ error: message }, { status: 500 }) };
   }
 
+  const fullName =
+    (typeof user.user_metadata?.full_name === "string" && user.user_metadata.full_name.trim()) ||
+    (typeof user.user_metadata?.name === "string" && user.user_metadata.name.trim()) ||
+    (user.email ? user.email.split("@")[0] : "User");
+
+  const { error: upsertError } = await adminClient.from("users").upsert(
+    {
+      id: user.id,
+      email: user.email ?? null,
+      full_name: fullName,
+    },
+    {
+      onConflict: "id",
+      ignoreDuplicates: false,
+    }
+  );
+
+  if (upsertError) {
+    return { error: NextResponse.json({ error: upsertError.message }, { status: 500 }) };
+  }
+
   return { user, adminClient };
 }
 
