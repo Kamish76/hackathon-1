@@ -22,32 +22,22 @@ ALTER TABLE public.auth_users ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist
 DROP POLICY IF EXISTS "Users can read their own auth record" ON public.auth_users;
+DROP POLICY IF EXISTS "Authenticated users can read auth_users" ON public.auth_users;
 DROP POLICY IF EXISTS "Users can update their own auth record" ON public.auth_users;
 DROP POLICY IF EXISTS "Admins can read all auth records" ON public.auth_users;
 
--- Allow users to read their own auth record
-CREATE POLICY "Users can read their own auth record" 
+-- Allow authenticated users to read any auth_users record (for verification)
+CREATE POLICY "Authenticated users can read auth_users" 
   ON public.auth_users 
   FOR SELECT 
-  USING (auth.uid() = id);
+  TO authenticated
+  USING (true);
 
 -- Allow users to update their own auth record
 CREATE POLICY "Users can update their own auth record" 
   ON public.auth_users 
   FOR UPDATE 
   USING (auth.uid() = id);
-
--- No INSERT policy needed - we'll use a trigger with SECURITY DEFINER
-
--- Allow admins to read all auth records
-CREATE POLICY "Admins can read all auth records" 
-  ON public.auth_users 
-  FOR SELECT 
-  USING (
-    auth.uid() IN (
-      SELECT id FROM public.auth_users WHERE role_id IS NOT NULL
-    )
-  );
 
 -- Function to create person_registry record (bypasses RLS with SECURITY DEFINER)
 CREATE OR REPLACE FUNCTION public.create_person_registry_record(
@@ -123,3 +113,29 @@ $$ language 'plpgsql';
 DROP TRIGGER IF EXISTS update_auth_users_updated_at ON public.auth_users;
 CREATE TRIGGER update_auth_users_updated_at BEFORE UPDATE ON public.auth_users
   FOR EACH ROW EXECUTE FUNCTION public.update_auth_users_updated_at();
+-- Function to get person_registry full_name by user_id (bypasses RLS with SECURITY DEFINER)
+DROP FUNCTION IF EXISTS public.get_person_full_name(UUID);
+CREATE OR REPLACE FUNCTION public.get_person_full_name(user_id UUID)
+RETURNS TEXT
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  full_name TEXT;
+BEGIN
+  -- Get the person_registry full_name through auth_users bridge
+  SELECT pr.full_name
+  INTO full_name
+  FROM public.person_registry pr
+  INNER JOIN public.auth_users au ON pr.id = au.person_id
+  WHERE au.id = user_id
+  LIMIT 1;
+  
+  RETURN full_name;
+END;
+$$;
+
+-- Grant execute permission to authenticated and anon users
+GRANT EXECUTE ON FUNCTION public.get_person_full_name(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_person_full_name(UUID) TO anon;
