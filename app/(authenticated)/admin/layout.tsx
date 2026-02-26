@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import AdminClientWrapper from './AdminClientWrapper';
 
 export default async function AdminLayout({
   children,
@@ -41,10 +42,10 @@ export default async function AdminLayout({
   });
 
   if (error || !adminRole) {
-    console.log('[AdminLayout] User is not active Admin; redirecting to /events');
-    redirect('/events');
+    console.log('[AdminLayout] User is not active Admin; redirecting to /member');
+    redirect('/member');
   }
 
   console.log('[AdminLayout] Access granted to admin route');
-  return <>{children}</>;
+  return <AdminClientWrapper>{children}</AdminClientWrapper>;
 }
