@@ -9,7 +9,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'Admin' | 'Taker';
+  role: 'Admin' | 'Student' | 'Staff' | 'Visitor' | 'Special Guest' | 'Taker';
 }
 
 interface AuthContextType {
@@ -24,7 +24,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function mapSupabaseUser(user: SupabaseUser, personRegistryFullName?: string): User {
+function mapSupabaseUser(
+  user: SupabaseUser,
+  personRegistryFullName?: string,
+  personRole?: User['role'],
+): User {
   const email = user.email ?? '';
   // Prefer person_registry full_name over Google metadata
   const fullName = personRegistryFullName || (typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : undefined);
@@ -33,12 +37,13 @@ function mapSupabaseUser(user: SupabaseUser, personRegistryFullName?: string): U
   console.log('- personRegistryFullName:', personRegistryFullName);
   console.log('- user.user_metadata?.full_name:', user.user_metadata?.full_name);
   console.log('- Final fullName:', fullName);
+  console.log('- personRole:', personRole);
 
   return {
     id: user.id,
     email,
     name: fullName || email || 'User',
-    role: email.endsWith('@school.edu') ? 'Admin' : 'Taker',
+    role: personRole ?? 'Taker',
   };
 }
 
@@ -50,8 +55,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    console.log('[AuthContext] Initializing auth state...');
 
-    const verifyUserInAuthUsers = async (userId: string, userEmail: string): Promise<{ verified: boolean; personRegistryFullName?: string }> => {
+    const verifyUserInAuthUsers = async (userId: string, userEmail: string): Promise<{ verified: boolean; personRegistryFullName?: string; personRole?: User['role'] }> => {
       console.log('🔵 Verifying user in auth_users table...');
       
       try {
@@ -107,52 +113,119 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.warn('⚠️ RPC call failed:', error instanceof Error ? error.message : error);
         }
 
+        // Fetch admin role from school_operator_roles
+        let personRole: User['role'] = 'Taker';
+        try {
+          const { data: adminRole } = await supabase
+            .from('school_operator_roles')
+            .select('operator_role')
+            .eq('user_id', userId)
+            .eq('is_active', true)
+            .eq('operator_role', 'Admin')
+            .maybeSingle();
+
+          if (adminRole) {
+            personRole = 'Admin';
+            console.log('✅ User has Admin role');
+          } else {
+            // Fetch person_type from person_registry
+            const { data: personRecord } = await supabase
+              .from('person_registry')
+              .select('person_type')
+              .eq('id', authUser.person_id)
+              .maybeSingle();
+
+            if (personRecord?.person_type) {
+              personRole = personRecord.person_type as User['role'];
+              console.log('✅ Person type from registry:', personRole);
+            }
+          }
+        } catch (roleError) {
+          console.warn('⚠️ Could not fetch role, defaulting to Taker:', roleError);
+        }
+
         console.log('✅ User verified in auth_users');
-        return { verified: true, personRegistryFullName: fullName || undefined };
+        return { verified: true, personRegistryFullName: fullName || undefined, personRole };
       } catch (error) {
         console.error('⚠️ Exception checking auth_users:', error);
         return { verified: true }; // Allow access despite error
       }
     };
 
-    const initializeAuth = async () => {
-      const { data, error } = await supabase.auth.getUser();
+    const applySessionUser = async (sessionUser: SupabaseUser | null) => {
+      console.log('[AuthContext] applySessionUser called', {
+        hasSessionUser: Boolean(sessionUser),
+        userId: sessionUser?.id ?? null,
+        email: sessionUser?.email ?? null,
+      });
 
       if (!mounted) {
+        console.log('[AuthContext] Component unmounted; skipping applySessionUser');
         return;
       }
 
-      if (!error && data.user) {
-        const result = await verifyUserInAuthUsers(data.user.id, data.user.email || '');
-        if (result.verified && mounted) {
-          setUser(mapSupabaseUser(data.user, result.personRegistryFullName));
-        }
-      } else {
+      if (!sessionUser) {
+        console.log('[AuthContext] No session user; setting user=null');
         setUser(null);
+        return;
       }
 
-      setIsLoading(false);
+      const result = await verifyUserInAuthUsers(sessionUser.id, sessionUser.email || '');
+      if (result.verified && mounted) {
+        console.log('[AuthContext] Session user verified, mapping user state');
+        setUser(mapSupabaseUser(sessionUser, result.personRegistryFullName, result.personRole));
+      } else {
+        console.log('[AuthContext] Session user not verified; keeping user state null');
+      }
     };
 
-    initializeAuth();
+    const initializeAuth = async () => {
+      try {
+        console.log('[AuthContext] Calling supabase.auth.getSession()');
+        const { data, error } = await supabase.auth.getSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event: AuthChangeEvent, session: Session | null) => {
+        console.log('[AuthContext] getSession result', {
+          hasError: Boolean(error),
+          hasSession: Boolean(data.session),
+          userId: data.session?.user?.id ?? null,
+        });
+
+        if (!error && data.session?.user) {
+          await applySessionUser(data.session.user);
+        } else {
+          setUser(null);
+        }
+      } catch (error) {
+        console.error('[AuthContext] initializeAuth failed:', error);
+        setUser(null);
+      }
+
+      if (mounted) {
+        console.log('[AuthContext] Initialization completed; setting isLoading=false');
+        setIsLoading(false);
+      }
+    };
+
+    void initializeAuth();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      console.log('[AuthContext] onAuthStateChange fired', {
+        event: _event,
+        hasSession: Boolean(session),
+        userId: session?.user?.id ?? null,
+      });
+
       if (!mounted) {
+        console.log('[AuthContext] Component unmounted; skipping auth state change');
         return;
       }
 
-      if (session?.user) {
-        const result = await verifyUserInAuthUsers(session.user.id, session.user.email || '');
-        if (result.verified && mounted) {
-          setUser(mapSupabaseUser(session.user, result.personRegistryFullName));
-        }
-      } else {
-        setUser(null);
-      }
+      void applySessionUser(session?.user ?? null);
     });
 
     return () => {
       mounted = false;
+      console.log('[AuthContext] Cleaning up auth listener');
       authListener.subscription.unsubscribe();
     };
   }, [supabase, router]);
