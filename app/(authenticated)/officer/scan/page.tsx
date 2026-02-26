@@ -3,7 +3,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import {
-  ScanLine, Wifi, CheckCircle2, XCircle, Clock, QrCode, User, AlertCircle,
+  ScanLine, Wifi, CheckCircle2, Clock, QrCode, User, AlertCircle,
+  ArrowDownCircle, ArrowUpCircle, ShieldAlert,
 } from 'lucide-react';
 import OfficerSidebar from '@/components/OfficerSidebar';
 import { createClient } from '@/lib/supabase/client';
@@ -18,7 +19,7 @@ interface ScanEntry {
   id: string;
   name: string;
   type: string;
-  direction: 'IN';
+  direction: 'IN' | 'OUT';
   gate: string;
   time: string;
   status: 'granted' | 'denied';
@@ -28,6 +29,14 @@ interface LastResult {
   name: string;
   type: string;
   refId: string;
+  direction: 'IN' | 'OUT';
+}
+
+interface OverridePending {
+  personName: string;
+  personType: string;
+  refId: string;
+  direction: 'IN' | 'OUT';
 }
 
 function timeAgo(date: Date): string {
@@ -40,19 +49,26 @@ function timeAgo(date: Date): string {
 export default function ScanPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'qr' | 'nfc'>('qr');
+  const [direction, setDirection] = useState<'IN' | 'OUT'>('IN');
   const [scanStatus, setScanStatus] = useState<ScanStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [lastResult, setLastResult] = useState<LastResult | null>(null);
+  const [overridePending, setOverridePending] = useState<OverridePending | null>(null);
   const [recentScans, setRecentScans] = useState<ScanEntry[]>([]);
   const { gates, selectedGate, setSelectedGate } = useOfficerGate();
   const processingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gateIdRef = useRef<string | null>(null);
+  const directionRef = useRef<'IN' | 'OUT'>('IN');
 
-  // Keep gateIdRef in sync with selected gate
+  // Keep refs in sync
   useEffect(() => {
     gateIdRef.current = selectedGate?.id ?? null;
   }, [selectedGate?.id]);
+
+  useEffect(() => {
+    directionRef.current = direction;
+  }, [direction]);
 
   // Reload today's scans for this gate whenever gate or user changes
   useEffect(() => {
@@ -92,12 +108,16 @@ export default function ScanPage() {
     setScanStatus('scanning');
     setLastResult(null);
     setErrorMsg('');
+    setOverridePending(null);
   }, []);
 
   const handleDecode = useCallback(async (text: string) => {
     if (processingRef.current) return;
     processingRef.current = true;
     setScanStatus('idle'); // pause camera re-decode while processing
+
+    // Capture direction at call time so it's stable inside the async chain
+    const currentDirection = directionRef.current;
 
     const PREFIX = 'REFERENCE_ID:';
     if (!text.startsWith(PREFIX)) {
@@ -133,7 +153,7 @@ export default function ScanPage() {
         .insert({
           person_id: refId,
           gate_id: gateIdRef.current,
-          direction: 'IN',
+          direction: currentDirection,
           verification_method: 'QR',
           entry_mode: 'WALK',
           operator_user_id: user?.id ?? null,
@@ -141,26 +161,35 @@ export default function ScanPage() {
         .select('id')
         .single();
       if (insertError) {
-        // Anti-passback: person already inside
-        const msg = insertError.message?.toLowerCase().includes('duplicate')
-          ? `${person.full_name} is already recorded as inside.`
-          : 'Failed to record event. Please try again.';
-        setErrorMsg(msg);
+        const errLower = insertError.message?.toLowerCase() ?? '';
+        const isPassback = errLower.includes('anti-passback');
+        if (isPassback) {
+          // Don't auto-dismiss — show override confirmation instead
+          if (timerRef.current) clearTimeout(timerRef.current);
+          setOverridePending({ personName: person.full_name, personType: person.person_type, refId, direction: currentDirection });
+          const msg = currentDirection === 'IN'
+            ? `${person.full_name} is already recorded as INSIDE — they haven't exited yet.`
+            : `${person.full_name} is already recorded as OUTSIDE — they haven't entered yet.`;
+          setErrorMsg(msg);
+        } else {
+          setErrorMsg('Failed to record event. Please try again.');
+          timerRef.current = setTimeout(resetToScanning, 4000);
+        }
         setScanStatus('error');
-        timerRef.current = setTimeout(resetToScanning, 2500);
         return;
       }
       if (inserted?.id) newEventId = inserted.id;
     }
 
-    const result: LastResult = { name: person.full_name, type: person.person_type, refId };
+    const result: LastResult = { name: person.full_name, type: person.person_type, refId, direction: currentDirection };
     setLastResult(result);
+    setOverridePending(null);
     setRecentScans((prev) => [
       {
         id: newEventId,
         name: person.full_name,
         type: person.person_type,
-        direction: 'IN',
+        direction: currentDirection,
         gate: selectedGate?.gate_name ?? 'Unknown Gate',
         time: timeAgo(new Date()),
         status: 'granted',
@@ -170,6 +199,53 @@ export default function ScanPage() {
     setScanStatus('success');
     timerRef.current = setTimeout(resetToScanning, 3000);
   }, [resetToScanning, user?.id, selectedGate]);
+
+  const handleOverride = useCallback(async () => {
+    if (!overridePending || !gateIdRef.current) return;
+    const { personName, personType, refId, direction: overrideDir } = overridePending;
+    setOverridePending(null);
+    setScanStatus('idle');
+
+    const supabase = createClient();
+    const { data: inserted, error } = await supabase
+      .from('access_events')
+      .insert({
+        person_id: refId,
+        gate_id: gateIdRef.current,
+        direction: overrideDir,
+        verification_method: 'QR',
+        entry_mode: 'WALK',
+        operator_user_id: user?.id ?? null,
+        is_manual_override: true,
+        override_reason: `Missed scan correction — officer override (recorded ${overrideDir} despite no matching prior ${overrideDir === 'IN' ? 'OUT' : 'IN'})`,
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      setErrorMsg('Override failed. Please try again.');
+      setScanStatus('error');
+      timerRef.current = setTimeout(resetToScanning, 3000);
+      return;
+    }
+
+    const newEventId = inserted?.id ?? crypto.randomUUID();
+    setLastResult({ name: personName, type: personType, refId, direction: overrideDir });
+    setRecentScans((prev) => [
+      {
+        id: newEventId,
+        name: personName,
+        type: personType,
+        direction: overrideDir,
+        gate: selectedGate?.gate_name ?? 'Unknown Gate',
+        time: timeAgo(new Date()),
+        status: 'granted',
+      },
+      ...prev,
+    ]);
+    setScanStatus('success');
+    timerRef.current = setTimeout(resetToScanning, 3000);
+  }, [overridePending, resetToScanning, user?.id, selectedGate]);
 
   const toggleScanning = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -188,6 +264,7 @@ export default function ScanPage() {
     setScanStatus('idle');
     setLastResult(null);
     setErrorMsg('');
+    setOverridePending(null);
     setActiveTab(tab);
   };
 
@@ -268,34 +345,99 @@ export default function ScanPage() {
               <div className="bg-white rounded-xl border border-[#e2e8f0] p-6 shadow-sm flex flex-col gap-4">
                 <p className="text-sm font-semibold text-[#0f172a]">QR Code Scanner</p>
 
+                {/* Direction toggle */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setDirection('IN')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      direction === 'IN'
+                        ? 'bg-[#dcfce7] text-[#16a34a] ring-2 ring-[#16a34a]/30'
+                        : 'bg-[#f1f5f9] text-[#64748b] hover:bg-[#e2e8f0]'
+                    }`}
+                  >
+                    <ArrowDownCircle className="w-4 h-4" />
+                    IN
+                  </button>
+                  <button
+                    onClick={() => setDirection('OUT')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      direction === 'OUT'
+                        ? 'bg-[#fee2e2] text-[#ef4444] ring-2 ring-[#ef4444]/30'
+                        : 'bg-[#f1f5f9] text-[#64748b] hover:bg-[#e2e8f0]'
+                    }`}
+                  >
+                    <ArrowUpCircle className="w-4 h-4" />
+                    OUT
+                  </button>
+                </div>
+
                 {/* Success card */}
                 {scanStatus === 'success' && lastResult && (
                   <div className="flex flex-col items-center gap-3 py-4">
-                    <div className="w-14 h-14 rounded-full bg-[#dcfce7] flex items-center justify-center">
-                      <CheckCircle2 className="w-7 h-7 text-[#16a34a]" />
+                    <div className={`w-14 h-14 rounded-full flex items-center justify-center ${
+                      lastResult.direction === 'IN' ? 'bg-[#dcfce7]' : 'bg-[#fee2e2]'
+                    }`}>
+                      <CheckCircle2 className={`w-7 h-7 ${lastResult.direction === 'IN' ? 'text-[#16a34a]' : 'text-[#ef4444]'}`} />
                     </div>
                     <div className="text-center">
                       <p className="text-base font-bold text-[#0f172a]">{lastResult.name}</p>
                       <p className="text-sm text-[#64748b]">{lastResult.type}</p>
                     </div>
-                    <span className="text-xs font-semibold bg-[#dcfce7] text-[#16a34a] px-3 py-1 rounded-full">
-                      ✓ Logged IN
+                    <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                      lastResult.direction === 'IN' ? 'bg-[#dcfce7] text-[#16a34a]' : 'bg-[#fee2e2] text-[#ef4444]'
+                    }`}>
+                      ✓ Logged {lastResult.direction}
                     </span>
                     <p className="text-xs text-[#94a3b8]">Resuming scanner…</p>
                   </div>
                 )}
 
                 {/* Error card */}
-                {scanStatus === 'error' && (
+                {scanStatus === 'error' && !overridePending && (
                   <div className="flex flex-col items-center gap-3 py-4">
                     <div className="w-14 h-14 rounded-full bg-[#fee2e2] flex items-center justify-center">
                       <AlertCircle className="w-7 h-7 text-[#ef4444]" />
                     </div>
                     <div className="text-center">
-                      <p className="text-base font-bold text-[#0f172a]">Scan Failed</p>
-                      <p className="text-sm text-[#64748b]">{errorMsg}</p>
+                      <p className="text-base font-bold text-[#0f172a] mb-1">Scan Failed</p>
+                      <p className="text-sm text-[#64748b] leading-relaxed max-w-xs">{errorMsg}</p>
                     </div>
                     <p className="text-xs text-[#94a3b8]">Resuming scanner…</p>
+                  </div>
+                )}
+
+                {/* Override confirmation card */}
+                {scanStatus === 'error' && overridePending && (
+                  <div className="flex flex-col items-center gap-3 py-4">
+                    <div className="w-14 h-14 rounded-full bg-[#fef3c7] flex items-center justify-center">
+                      <ShieldAlert className="w-7 h-7 text-[#f59e0b]" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-base font-bold text-[#0f172a] mb-1">Missed Scan Detected</p>
+                      <p className="text-sm text-[#64748b] leading-relaxed max-w-xs">{errorMsg}</p>
+                      <p className="text-xs text-[#94a3b8] mt-1">
+                        {overridePending.direction === 'IN'
+                          ? 'They may have left without scanning OUT.'
+                          : 'They may have entered without scanning IN.'}
+                      </p>
+                    </div>
+                    <p className="text-xs font-semibold text-[#f59e0b] bg-[#fef3c7] px-2 py-0.5 rounded-full">
+                      Override required
+                    </p>
+                    <div className="flex gap-2 w-full mt-1">
+                      <button
+                        onClick={resetToScanning}
+                        className="flex-1 py-2 rounded-lg text-sm font-medium bg-[#f1f5f9] text-[#64748b] hover:bg-[#e2e8f0] transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleOverride}
+                        className="flex-1 py-2 rounded-lg text-sm font-medium bg-[#f59e0b] text-white hover:bg-[#d97706] transition-colors"
+                      >
+                        Override &amp; Log {overridePending.direction}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -359,17 +501,21 @@ export default function ScanPage() {
             <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4 content-start">
               <div className="bg-white rounded-xl border border-[#e2e8f0] p-6 shadow-sm">
                 <div className="w-10 h-10 rounded-lg bg-[#dcfce7] flex items-center justify-center mb-3">
-                  <CheckCircle2 className="w-5 h-5 text-[#16a34a]" />
+                  <ArrowDownCircle className="w-5 h-5 text-[#16a34a]" />
                 </div>
-                <h3 className="text-2xl font-bold text-[#0f172a] mb-1">{recentScans.filter(s => s.status === 'granted').length}</h3>
-                <p className="text-sm text-[#64748b]">Granted This Session</p>
+                <h3 className="text-2xl font-bold text-[#0f172a] mb-1">
+                  {recentScans.filter(s => s.direction === 'IN' && s.status === 'granted').length}
+                </h3>
+                <p className="text-sm text-[#64748b]">IN This Session</p>
               </div>
               <div className="bg-white rounded-xl border border-[#e2e8f0] p-6 shadow-sm">
                 <div className="w-10 h-10 rounded-lg bg-[#fee2e2] flex items-center justify-center mb-3">
-                  <XCircle className="w-5 h-5 text-[#ef4444]" />
+                  <ArrowUpCircle className="w-5 h-5 text-[#ef4444]" />
                 </div>
-                <h3 className="text-2xl font-bold text-[#0f172a] mb-1">{recentScans.filter(s => s.status === 'denied').length}</h3>
-                <p className="text-sm text-[#64748b]">Denied This Session</p>
+                <h3 className="text-2xl font-bold text-[#0f172a] mb-1">
+                  {recentScans.filter(s => s.direction === 'OUT' && s.status === 'granted').length}
+                </h3>
+                <p className="text-sm text-[#64748b]">OUT This Session</p>
               </div>
               <div className="bg-white rounded-xl border border-[#e2e8f0] p-6 shadow-sm">
                 <div className="w-10 h-10 rounded-lg bg-[#fef3c7] flex items-center justify-center mb-3">
@@ -411,7 +557,11 @@ export default function ScanPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#dcfce7] text-[#16a34a]">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        scan.direction === 'IN'
+                          ? 'bg-[#dcfce7] text-[#16a34a]'
+                          : 'bg-[#fee2e2] text-[#ef4444]'
+                      }`}>
                         {scan.direction}
                       </span>
                       <p className="text-xs text-[#64748b] w-16 text-right">{scan.time}</p>
