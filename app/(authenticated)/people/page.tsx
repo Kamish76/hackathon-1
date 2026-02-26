@@ -15,6 +15,15 @@ interface Person {
   status: 'Active' | 'Inactive';
 }
 
+type PersonRegistryRow = {
+  id: string;
+  full_name: string | null;
+  person_type: string | null;
+  email: string | null;
+  nfc_tag_id: string | null;
+  is_active: boolean | null;
+};
+
 const personTypes = ['All', 'Student', 'Staff', 'Visitor', 'Special Guest'];
 
 const statusColors: Record<string, { bg: string; text: string }> = {
@@ -24,6 +33,13 @@ const statusColors: Record<string, { bg: string; text: string }> = {
 
 function PeopleRegistryContent() {
   const supabase = createClient();
+
+  const normalizePersonType = (personType: string | null): Person['type'] => {
+    if (personType === 'Staff') return 'Staff';
+    if (personType === 'Visitor') return 'Visitor';
+    if (personType === 'Special Guest') return 'Special Guest';
+    return 'Student';
+  };
 
   const [people, setPeople] = useState<Person[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,10 +63,10 @@ function PeopleRegistryContent() {
         setFetchError('Failed to load people. Please try again.');
       } else {
         setPeople(
-          (data ?? []).map((row) => ({
+          (data ?? []).map((row: { id: string; full_name: string; person_type: string; email: string | null; nfc_tag_id: string | null; is_active: boolean }) => ({
             id: row.id,
-            name: row.full_name,
-            type: row.person_type as Person['type'],
+            name: row.full_name ?? 'Unknown',
+            type: normalizePersonType(row.person_type),
             contact: row.email ?? '—',
             nfcUid: row.nfc_tag_id ?? '—',
             status: row.is_active ? 'Active' : 'Inactive',

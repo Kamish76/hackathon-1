@@ -11,7 +11,7 @@ type Member = {
   fullName: string;
   personType: string;
   role: CombinedRole;
-  operatorRole: 'Admin' | 'Taker' | null;
+  operatorRole: 'Admin' | 'Officer' | 'Taker' | null;
   isActive: boolean;
 };
 

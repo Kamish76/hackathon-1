@@ -127,7 +127,7 @@ export async function PATCH(
   }
 
   if (selectedRole === 'Admin' || selectedRole === 'Officer') {
-    const operatorRole = selectedRole === 'Admin' ? 'Admin' : 'Taker';
+    const operatorRole = selectedRole === 'Admin' ? 'Admin' : 'Officer';
 
     const { data: upsertedRole, error: upsertRoleError } = await adminClient
       .from('school_operator_roles')
