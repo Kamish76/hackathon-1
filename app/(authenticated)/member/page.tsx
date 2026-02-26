@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Calendar, Phone, User } from "lucide-react";
+import { Calendar, Phone, User, Wifi } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -88,6 +88,7 @@ export default function MemberProfile() {
   const supabase = useMemo(() => createClient(), []);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const profileObjectUrlRef = useRef<string | null>(null);
+  const nfcEnrollAbortRef = useRef<AbortController | null>(null);
   const defaultProfileImage = useMemo(
     () => createDefaultProfileImage(user?.name || user?.email || "Member"),
     [user?.name, user?.email]
@@ -131,6 +132,11 @@ export default function MemberProfile() {
   const [tagLoading, setTagLoading] = useState(false);
   const [tagActionLoading, setTagActionLoading] = useState<"set" | "replace" | null>(null);
   const [tagMessage, setTagMessage] = useState("");
+
+  // NFC enrollment
+  const [enrolledTagSerial, setEnrolledTagSerial] = useState<string | null>(null);
+  const [nfcEnrollStatus, setNfcEnrollStatus] = useState<'idle' | 'reading' | 'success' | 'error'>('idle');
+  const [nfcEnrollMsg, setNfcEnrollMsg] = useState('');
 
   const isVehicleTabDisabled = personTypeLabel === "Visitor" || personTypeLabel === "Special Guest";
 
@@ -610,6 +616,85 @@ export default function MemberProfile() {
     };
   }, [loadTagStatus, user]);
 
+  // ── NFC enrollment handlers ───────────────────────────────────────────────
+
+  const loadEnrolledTag = useCallback(async (registryId: string) => {
+    const { data } = await supabase
+      .from('person_registry')
+      .select('nfc_tag_id')
+      .eq('id', registryId)
+      .single();
+    setEnrolledTagSerial((data as { nfc_tag_id?: string | null } | null)?.nfc_tag_id ?? null);
+  }, [supabase]);
+
+  useEffect(() => {
+    if (personRegistryId) void loadEnrolledTag(personRegistryId);
+  }, [personRegistryId, loadEnrolledTag]);
+
+  const startEnroll = useCallback(async () => {
+    if (!('NDEFReader' in window)) {
+      setNfcEnrollMsg('Web NFC is not supported. Use Chrome on Android with NFC enabled.');
+      setNfcEnrollStatus('error');
+      return;
+    }
+    if (!personRegistryId) {
+      setNfcEnrollMsg('Profile not found. Save your profile first.');
+      setNfcEnrollStatus('error');
+      return;
+    }
+    try {
+      nfcEnrollAbortRef.current = new AbortController();
+      const reader = new NDEFReader();
+      setNfcEnrollStatus('reading');
+      setNfcEnrollMsg('Hold your NFC card or tag to the back of your device…');
+      await reader.scan({ signal: nfcEnrollAbortRef.current.signal });
+      reader.onreading = async (event: NDEFReadingEvent) => {
+        nfcEnrollAbortRef.current?.abort();
+        const serial = event.serialNumber;
+        const { error } = await supabase
+          .from('person_registry')
+          .update({ nfc_tag_id: serial })
+          .eq('id', personRegistryId);
+        if (error) {
+          setNfcEnrollMsg('Failed to save tag: ' + error.message);
+          setNfcEnrollStatus('error');
+        } else {
+          setEnrolledTagSerial(serial);
+          setNfcEnrollMsg('Tag enrolled successfully!');
+          setNfcEnrollStatus('success');
+        }
+      };
+      reader.onreadingerror = () => {
+        setNfcEnrollMsg('Could not read tag. Try tapping again.');
+        setNfcEnrollStatus('error');
+      };
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        setNfcEnrollMsg('NFC permission denied or unavailable.');
+        setNfcEnrollStatus('error');
+      }
+    }
+  }, [personRegistryId, supabase]);
+
+  const stopEnroll = useCallback(() => {
+    nfcEnrollAbortRef.current?.abort();
+    nfcEnrollAbortRef.current = null;
+    setNfcEnrollStatus('idle');
+    setNfcEnrollMsg('');
+  }, []);
+
+  const removeEnrolledTag = useCallback(async () => {
+    if (!personRegistryId) return;
+    const { error } = await supabase
+      .from('person_registry')
+      .update({ nfc_tag_id: null })
+      .eq('id', personRegistryId);
+    if (!error) {
+      setEnrolledTagSerial(null);
+      setNfcEnrollMsg('Tag removed.');
+    }
+  }, [personRegistryId, supabase]);
+
   const qrCodeValue = tagStatus?.tag.uid || "TAG_ID_UNAVAILABLE";
   const effectiveTagStatus: MemberTagStatusResponse =
     tagStatus ?? {
@@ -861,63 +946,86 @@ export default function MemberProfile() {
               )}
             </div>
 
-            {/* Announcements - span full width */}
+            {/* Tag Enrollment - span full width */}
             <div className="bg-white rounded-2xl shadow-lg border border-[#e9eef6] p-6 md:col-span-2">
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-semibold text-[#1e293b]">Tag Management</h4>
-                    <p className="text-sm text-[#64748b]">Manage your physical NFC attendance tag</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
-                    onClick={loadTagStatus}
-                    disabled={tagLoading || tagActionLoading !== null}
-                  >
-                    {tagLoading ? "Refreshing..." : "Refresh"}
-                  </button>
+                <div>
+                  <h4 className="font-semibold text-[#1e293b]">Tag Management</h4>
+                  <p className="text-sm text-[#64748b]">Link your physical NFC card or tag to your account</p>
                 </div>
 
-                <div className="rounded-xl border border-[#b7ebc6] bg-[#ecfdf3] p-4">
-                  <p className="text-[#15803d] font-semibold text-base">
-                    {effectiveTagStatus.tag.status === "active" ? "Active Tag Assigned" : "No Tag Assigned"}
-                  </p>
-                  <p className="text-[#15803d] text-sm mt-1">
-                    {effectiveTagStatus.tag.status === "active"
-                      ? `Your tag is ready for attendance check-in. You can rotate to a new ID in ${cooldownDaysRemaining} day${cooldownDaysRemaining === 1 ? "" : "s"}.`
-                      : "Program a new tag to start attendance check-in."}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  className="w-full rounded-md bg-white text-[#1e293b] border border-[#e2e8f0] px-4 py-2 text-sm font-semibold hover:bg-[#f8fafc] disabled:opacity-60"
-                  onClick={() => void runTagAction(effectiveTagStatus.tag.status === "active" ? "replace" : "set")}
-                  disabled={tagLoading || tagActionLoading !== null}
-                >
-                  {tagActionLoading ? "Programming Tag..." : "Program New Tag"}
-                </button>
-
-                {tagMessage ? <p className="text-sm text-[#64748b]">{tagMessage}</p> : null}
-
-                <div className="border-t border-[#e2e8f0] pt-4">
-                  <h5 className="font-semibold text-[#1e293b] mb-2">Recent Generations</h5>
-                  {tagHistory.length === 0 ? (
-                    <p className="text-sm text-[#64748b]">No generations yet.</p>
-                  ) : (
-                    <div className="rounded-lg bg-[#f8fafc] p-2 text-sm flex items-center justify-between">
-                      <span className="text-[#64748b]">Latest</span>
-                      <span className="font-semibold text-[#7c3aed]">
-                        {`${tagHistory[0].tag_id.slice(0, 8)}...`}
-                      </span>
+                {/* Current tag status */}
+                {enrolledTagSerial ? (
+                  <div className="rounded-xl border border-[#b7ebc6] bg-[#ecfdf3] p-4 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[#15803d] font-semibold text-sm">NFC Tag Enrolled</p>
+                      <p className="text-[#15803d] text-xs mt-0.5 font-mono break-all">{enrolledTagSerial}</p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={removeEnrolledTag}
+                      className="shrink-0 text-xs text-[#ef4444] hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-4">
+                    <p className="text-[#64748b] text-sm">No NFC tag enrolled. Tap a card below to link it.</p>
+                  </div>
+                )}
+
+                {/* Success / error messages */}
+                {nfcEnrollStatus === 'success' && (
+                  <div className="rounded-lg bg-[#ecfdf3] border border-[#b7ebc6] px-4 py-3 text-sm text-[#15803d] font-medium">
+                    ✓ {nfcEnrollMsg}
+                  </div>
+                )}
+                {nfcEnrollStatus === 'error' && (
+                  <div className="rounded-lg bg-[#fee2e2] border border-[#fca5a5] px-4 py-3 text-sm text-[#b91c1c]">
+                    {nfcEnrollMsg}
+                  </div>
+                )}
+
+                {/* Radar tap zone — shown while reading */}
+                {nfcEnrollStatus === 'reading' && (
+                  <div className="flex flex-col items-center gap-3 py-2">
+                    <div className="relative w-24 h-24 flex items-center justify-center">
+                      <span className="absolute inset-0 rounded-full bg-[#dbeafe] animate-ping opacity-40" />
+                      <span className="absolute inset-2 rounded-full bg-[#bfdbfe] animate-ping opacity-30 [animation-delay:0.3s]" />
+                      <div className="relative z-10 w-14 h-14 rounded-full bg-[#2563eb] flex items-center justify-center">
+                        <Wifi className="w-7 h-7 text-white" />
+                      </div>
+                    </div>
+                    <p className="text-sm text-[#64748b] text-center">{nfcEnrollMsg}</p>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex gap-2">
+                  {nfcEnrollStatus === 'reading' ? (
+                    <button
+                      type="button"
+                      onClick={stopEnroll}
+                      className="flex-1 rounded-md bg-[#fee2e2] text-[#ef4444] px-4 py-2 text-sm font-semibold hover:bg-[#fecaca] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => { setNfcEnrollStatus('idle'); setNfcEnrollMsg(''); void startEnroll(); }}
+                      className="flex-1 rounded-md bg-[#1e293b] text-white px-4 py-2 text-sm font-semibold hover:bg-[#0f172a] transition-colors disabled:opacity-60"
+                      disabled={!personRegistryId}
+                    >
+                      {enrolledTagSerial ? 'Replace Tag' : 'Enroll NFC Tag'}
+                    </button>
                   )}
                 </div>
 
-                <div className="border-t border-[#e2e8f0] pt-4 text-sm text-[#64748b] space-y-1">
-                  <p>• You can generate and write a new unique tag ID every {effectiveTagStatus.cooldown.days} days.</p>
-                  <p>• Each tag write creates a completely new ID for security purposes.</p>
+                <div className="border-t border-[#e2e8f0] pt-4 text-sm text-[#94a3b8] space-y-1">
+                  <p>• Requires Chrome on Android with NFC enabled.</p>
+                  <p>• Your tag&apos;s unique hardware ID is read and linked — nothing is written to the tag.</p>
                 </div>
               </div>
             </div>

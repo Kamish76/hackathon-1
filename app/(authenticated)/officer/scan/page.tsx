@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import {
-  ScanLine, Wifi, CheckCircle2, Clock, QrCode, User, AlertCircle,
+  Wifi, CheckCircle2, Clock, QrCode, User, AlertCircle,
   ArrowDownCircle, ArrowUpCircle, ShieldAlert,
 } from 'lucide-react';
 import OfficerSidebar from '@/components/OfficerSidebar';
@@ -37,6 +37,7 @@ interface OverridePending {
   personType: string;
   refId: string;
   direction: 'IN' | 'OUT';
+  method: 'QR' | 'NFC';
 }
 
 function timeAgo(date: Date): string {
@@ -60,6 +61,7 @@ export default function ScanPage() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gateIdRef = useRef<string | null>(null);
   const directionRef = useRef<'IN' | 'OUT'>('IN');
+  const nfcAbortRef = useRef<AbortController | null>(null);
 
   // Keep refs in sync
   useEffect(() => {
@@ -166,7 +168,7 @@ export default function ScanPage() {
         if (isPassback) {
           // Don't auto-dismiss — show override confirmation instead
           if (timerRef.current) clearTimeout(timerRef.current);
-          setOverridePending({ personName: person.full_name, personType: person.person_type, refId, direction: currentDirection });
+          setOverridePending({ personName: person.full_name, personType: person.person_type, refId, direction: currentDirection, method: 'QR' });
           const msg = currentDirection === 'IN'
             ? `${person.full_name} is already recorded as INSIDE — they haven't exited yet.`
             : `${person.full_name} is already recorded as OUTSIDE — they haven't entered yet.`;
@@ -202,7 +204,7 @@ export default function ScanPage() {
 
   const handleOverride = useCallback(async () => {
     if (!overridePending || !gateIdRef.current) return;
-    const { personName, personType, refId, direction: overrideDir } = overridePending;
+    const { personName, personType, refId, direction: overrideDir, method } = overridePending;
     setOverridePending(null);
     setScanStatus('idle');
 
@@ -213,7 +215,7 @@ export default function ScanPage() {
         person_id: refId,
         gate_id: gateIdRef.current,
         direction: overrideDir,
-        verification_method: 'QR',
+        verification_method: method,
         entry_mode: 'WALK',
         operator_user_id: user?.id ?? null,
         is_manual_override: true,
@@ -247,6 +249,125 @@ export default function ScanPage() {
     timerRef.current = setTimeout(resetToScanning, 3000);
   }, [overridePending, resetToScanning, user?.id, selectedGate]);
 
+  // ── NFC handlers ──────────────────────────────────────────────────────────
+
+  const handleNfcRead = useCallback(async (serialNumber: string) => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+    const currentDirection = directionRef.current;
+
+    const supabase = createClient();
+    const { data: person, error } = await supabase
+      .from('person_registry')
+      .select('id, full_name, person_type')
+      .eq('nfc_tag_id', serialNumber)
+      .single();
+
+    if (error || !person) {
+      setErrorMsg(`No person registered for this NFC tag (${serialNumber}).`);
+      setScanStatus('error');
+      timerRef.current = setTimeout(resetToScanning, 3000);
+      return;
+    }
+
+    let newEventId = crypto.randomUUID();
+    if (gateIdRef.current) {
+      const supabaseInsert = createClient();
+      const { data: inserted, error: insertError } = await supabaseInsert
+        .from('access_events')
+        .insert({
+          person_id: person.id,
+          gate_id: gateIdRef.current,
+          direction: currentDirection,
+          verification_method: 'NFC',
+          entry_mode: 'WALK',
+          operator_user_id: user?.id ?? null,
+        })
+        .select('id')
+        .single();
+
+      if (insertError) {
+        const isPassback = insertError.message?.toLowerCase().includes('anti-passback');
+        if (isPassback) {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          const msg = currentDirection === 'IN'
+            ? `${person.full_name} is already recorded as INSIDE — they haven't exited yet.`
+            : `${person.full_name} is already recorded as OUTSIDE — they haven't entered yet.`;
+          setOverridePending({ personName: person.full_name, personType: person.person_type, refId: person.id, direction: currentDirection, method: 'NFC' });
+          setErrorMsg(msg);
+        } else {
+          setErrorMsg('Failed to record event. Please try again.');
+          timerRef.current = setTimeout(resetToScanning, 4000);
+        }
+        setScanStatus('error');
+        return;
+      }
+      if (inserted?.id) newEventId = inserted.id;
+    }
+
+    setLastResult({ name: person.full_name, type: person.person_type, refId: person.id, direction: currentDirection });
+    setOverridePending(null);
+    setRecentScans((prev) => [{
+      id: newEventId,
+      name: person.full_name,
+      type: person.person_type,
+      direction: currentDirection,
+      gate: selectedGate?.gate_name ?? 'Unknown Gate',
+      time: timeAgo(new Date()),
+      status: 'granted',
+    }, ...prev]);
+    setScanStatus('success');
+    // NFC: after success card shows briefly, resume listening (don't abort)
+    timerRef.current = setTimeout(() => {
+      processingRef.current = false;
+      setScanStatus('scanning');
+      setLastResult(null);
+      setErrorMsg('');
+      setOverridePending(null);
+    }, 2500);
+  }, [resetToScanning, user?.id, selectedGate]);
+
+  const startNfcScan = useCallback(async () => {
+    if (!('NDEFReader' in window)) {
+      setErrorMsg('Web NFC is not supported. Use Chrome on Android with NFC enabled.');
+      setScanStatus('error');
+      timerRef.current = setTimeout(resetToScanning, 3500);
+      return;
+    }
+    try {
+      nfcAbortRef.current = new AbortController();
+      const reader = new NDEFReader();
+      await reader.scan({ signal: nfcAbortRef.current.signal });
+      processingRef.current = false;
+      setScanStatus('scanning');
+      reader.onreading = (event: NDEFReadingEvent) => {
+        handleNfcRead(event.serialNumber);
+      };
+      reader.onreadingerror = () => {
+        setErrorMsg('Could not read NFC tag. Try tapping again.');
+        setScanStatus('error');
+        timerRef.current = setTimeout(resetToScanning, 2500);
+      };
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        setErrorMsg('NFC permission denied or unavailable on this device.');
+        setScanStatus('error');
+        timerRef.current = setTimeout(resetToScanning, 3000);
+      }
+    }
+  }, [handleNfcRead, resetToScanning]);
+
+  const stopNfcScan = useCallback(() => {
+    nfcAbortRef.current?.abort();
+    nfcAbortRef.current = null;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    processingRef.current = false;
+    setScanStatus('idle');
+    setLastResult(null);
+    setErrorMsg('');
+    setOverridePending(null);
+  }, []);
+
   const toggleScanning = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (scanStatus === 'scanning') {
@@ -269,10 +390,10 @@ export default function ScanPage() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-[#f8f9fa]">
       <OfficerSidebar activePage="scan" />
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
+      <main className="flex-1 overflow-auto pb-20 md:pb-0">
+        <div className="p-4 md:p-8">
           <div className="mb-6">
             <h2 className="text-3xl font-bold text-[#0f172a] mb-2">Scan / Check-in</h2>
             <p className="text-[#64748b]">Scan QR codes or NFC tags to record entry and exit events at your checkpoint.</p>
@@ -481,19 +602,151 @@ export default function ScanPage() {
               </div>
             ) : (
               /* NFC Tab */
-              <div className="bg-white rounded-xl border border-[#e2e8f0] p-6 shadow-sm flex flex-col items-center justify-center gap-4 min-h-65">
-                <div className="w-20 h-20 rounded-full bg-[#dbeafe] flex items-center justify-center">
-                  <ScanLine className="w-10 h-10 text-[#2563eb]" />
+              <div className="bg-white rounded-xl border border-[#e2e8f0] p-6 shadow-sm flex flex-col gap-4">
+                <p className="text-sm font-semibold text-[#0f172a]">NFC Tag Scanner</p>
+
+                {/* Direction toggle */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setDirection('IN')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      direction === 'IN'
+                        ? 'bg-[#dcfce7] text-[#16a34a] ring-2 ring-[#16a34a]/30'
+                        : 'bg-[#f1f5f9] text-[#64748b] hover:bg-[#e2e8f0]'
+                    }`}
+                  >
+                    <ArrowDownCircle className="w-4 h-4" />
+                    IN
+                  </button>
+                  <button
+                    onClick={() => setDirection('OUT')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      direction === 'OUT'
+                        ? 'bg-[#fee2e2] text-[#ef4444] ring-2 ring-[#ef4444]/30'
+                        : 'bg-[#f1f5f9] text-[#64748b] hover:bg-[#e2e8f0]'
+                    }`}
+                  >
+                    <ArrowUpCircle className="w-4 h-4" />
+                    OUT
+                  </button>
                 </div>
-                <div className="text-center">
-                  <p className="text-base font-semibold text-[#0f172a] mb-1">NFC Tag Scanner</p>
-                  <p className="text-sm text-[#64748b]">Tap an NFC-enabled card or device to the reader.</p>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-[#64748b] bg-[#f1f5f9] px-3 py-1.5 rounded-full">
-                  <Wifi className="w-4 h-4" />
-                  Waiting for tag…
-                </div>
-                <span className="text-xs font-medium text-[#94a3b8] bg-[#f1f5f9] px-2 py-0.5 rounded-full">Coming soon</span>
+
+                {/* Success card */}
+                {scanStatus === 'success' && lastResult && (
+                  <div className="flex flex-col items-center gap-3 py-4">
+                    <div className={`w-14 h-14 rounded-full flex items-center justify-center ${
+                      lastResult.direction === 'IN' ? 'bg-[#dcfce7]' : 'bg-[#fee2e2]'
+                    }`}>
+                      <CheckCircle2 className={`w-7 h-7 ${lastResult.direction === 'IN' ? 'text-[#16a34a]' : 'text-[#ef4444]'}`} />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-base font-bold text-[#0f172a]">{lastResult.name}</p>
+                      <p className="text-sm text-[#64748b]">{lastResult.type}</p>
+                    </div>
+                    <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                      lastResult.direction === 'IN' ? 'bg-[#dcfce7] text-[#16a34a]' : 'bg-[#fee2e2] text-[#ef4444]'
+                    }`}>
+                      ✓ Logged {lastResult.direction}
+                    </span>
+                    <p className="text-xs text-[#94a3b8]">Resuming NFC listener…</p>
+                  </div>
+                )}
+
+                {/* Error card */}
+                {scanStatus === 'error' && !overridePending && (
+                  <div className="flex flex-col items-center gap-3 py-4">
+                    <div className="w-14 h-14 rounded-full bg-[#fee2e2] flex items-center justify-center">
+                      <AlertCircle className="w-7 h-7 text-[#ef4444]" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-base font-bold text-[#0f172a] mb-1">NFC Error</p>
+                      <p className="text-sm text-[#64748b] leading-relaxed max-w-xs">{errorMsg}</p>
+                    </div>
+                    <p className="text-xs text-[#94a3b8]">Resuming listener…</p>
+                  </div>
+                )}
+
+                {/* Override confirmation card */}
+                {scanStatus === 'error' && overridePending && (
+                  <div className="flex flex-col items-center gap-3 py-4">
+                    <div className="w-14 h-14 rounded-full bg-[#fef3c7] flex items-center justify-center">
+                      <ShieldAlert className="w-7 h-7 text-[#f59e0b]" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-base font-bold text-[#0f172a] mb-1">Missed Scan Detected</p>
+                      <p className="text-sm text-[#64748b] leading-relaxed max-w-xs">{errorMsg}</p>
+                      <p className="text-xs text-[#94a3b8] mt-1">
+                        {overridePending.direction === 'IN'
+                          ? 'They may have left without scanning OUT.'
+                          : 'They may have entered without scanning IN.'}
+                      </p>
+                    </div>
+                    <p className="text-xs font-semibold text-[#f59e0b] bg-[#fef3c7] px-2 py-0.5 rounded-full">
+                      Override required
+                    </p>
+                    <div className="flex gap-2 w-full mt-1">
+                      <button
+                        onClick={stopNfcScan}
+                        className="flex-1 py-2 rounded-lg text-sm font-medium bg-[#f1f5f9] text-[#64748b] hover:bg-[#e2e8f0] transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleOverride}
+                        className="flex-1 py-2 rounded-lg text-sm font-medium bg-[#f59e0b] text-white hover:bg-[#d97706] transition-colors"
+                      >
+                        Override &amp; Log {overridePending.direction}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tap zone — radar animation */}
+                {(scanStatus === 'idle' || scanStatus === 'scanning') && (
+                  <div className="flex flex-col items-center justify-center gap-3 py-4">
+                    <div className="relative w-28 h-28 flex items-center justify-center">
+                      {scanStatus === 'scanning' && (
+                        <>
+                          <span className="absolute inset-0 rounded-full bg-[#dbeafe] animate-ping opacity-40" />
+                          <span className="absolute inset-2 rounded-full bg-[#bfdbfe] animate-ping opacity-30 [animation-delay:0.3s]" />
+                          <span className="absolute inset-4 rounded-full bg-[#93c5fd] animate-ping opacity-20 [animation-delay:0.6s]" />
+                        </>
+                      )}
+                      <div className={`relative z-10 w-16 h-16 rounded-full flex items-center justify-center transition-colors ${
+                        scanStatus === 'scanning' ? 'bg-[#2563eb]' : 'bg-[#dbeafe]'
+                      }`}>
+                        <Wifi className={`w-8 h-8 ${scanStatus === 'scanning' ? 'text-white' : 'text-[#2563eb]'}`} />
+                      </div>
+                    </div>
+                    <p className="text-xs text-[#64748b] text-center">
+                      {scanStatus === 'scanning'
+                        ? 'Hold an NFC card or tag near the back of your device'
+                        : 'Press Start to begin listening for NFC tags'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Start / Stop button */}
+                {(scanStatus === 'idle' || scanStatus === 'scanning') && (
+                  <button
+                    onClick={scanStatus === 'scanning' ? stopNfcScan : startNfcScan}
+                    disabled={!selectedGate}
+                    className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                      !selectedGate
+                        ? 'bg-[#f1f5f9] text-[#94a3b8] cursor-not-allowed'
+                        : scanStatus === 'scanning'
+                        ? 'bg-[#fee2e2] text-[#ef4444] hover:bg-[#fecaca]'
+                        : 'bg-[#1e293b] text-white hover:bg-[#0f172a]'
+                    }`}
+                  >
+                    <Wifi className="w-4 h-4" />
+                    {!selectedGate ? 'Select a gate first' : scanStatus === 'scanning' ? 'Stop NFC Listener' : 'Start NFC Listener'}
+                  </button>
+                )}
+
+                <p className="text-xs text-[#94a3b8] text-center">
+                  Web NFC requires Chrome on Android with NFC enabled.
+                </p>
               </div>
             )}
 

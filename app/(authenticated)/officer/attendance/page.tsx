@@ -68,10 +68,10 @@ export default function TrackerLogPage() {
   const todayDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-[#f8f9fa]">
       <OfficerSidebar activePage="attendance" />
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
+      <main className="flex-1 overflow-auto pb-20 md:pb-0">
+        <div className="p-4 md:p-8">
           <div className="mb-8">
             <h2 className="text-3xl font-bold text-[#0f172a] mb-2">Tracker Log</h2>
             <div className="flex items-center gap-2">

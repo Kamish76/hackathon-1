@@ -22,21 +22,24 @@ const quickActions = [
     bg: 'bg-[#ddd6fe]',
     title: 'Tracker Log',
     description: 'View and verify attendance records for your assigned checkpoint.',
-    status: 'Coming soon',
+    href: '/officer/attendance',
+    status: 'Ready',
   },
   {
     icon: <Users className="w-6 h-6 text-[#f59e0b]" />,
     bg: 'bg-[#fef3c7]',
     title: 'People Lookup',
     description: 'Search registered people to manually verify identity.',
-    status: 'Coming soon',
+    href: '/officer/lookup',
+    status: 'Ready',
   },
   {
     icon: <Activity className="w-6 h-6 text-[#16a34a]" />,
     bg: 'bg-[#dcfce7]',
     title: 'Live Feed',
     description: 'Monitor real-time access events at your gate.',
-    status: 'Coming soon',
+    href: '/officer/feed',
+    status: 'Ready',
   },
 ];
 
@@ -212,11 +215,11 @@ export default function OfficerPage() {
   ];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-[#f8f9fa]">
       <OfficerSidebar activePage="home" />
 
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
+      <main className="flex-1 overflow-auto pb-20 md:pb-0">
+        <div className="p-4 md:p-8">
         {/* Emergency banner / trigger */}
           {emergencyActive ? (
             <div className="mb-6 flex items-center gap-3 px-5 py-3 rounded-xl bg-[#fef2f2] border border-[#fecaca]">
