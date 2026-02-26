@@ -449,7 +449,12 @@ export default function MemberProfile() {
         return;
       }
 
-      setTagMessage(result?.message || "Tag updated.");
+      const baseMessage = result?.message || "Tag updated.";
+      const setupHint =
+        action === "set" || action === "replace"
+          ? " Registration complete. Use Tester Read to confirm cnt/code mirror payload is present on the physical tag."
+          : "";
+      setTagMessage(`${baseMessage}${setupHint}`);
       addDebugLog("runTagAction:success", { action, status: response.status, result });
       if (action !== "deactivate") {
         setDetectedTagUid("");
@@ -635,6 +640,13 @@ export default function MemberProfile() {
     addDebugLog("runTesterWrite:start", { testerUrlValue });
 
     try {
+      const formatError = (error: unknown) => {
+        if (error instanceof Error) {
+          return `${error.name}: ${error.message}`;
+        }
+        return String(error);
+      };
+
       const ndef = new ndefCtor();
       if (!ndef.write) {
         setTagMessage("Web NFC write is not supported on this browser/device.");
@@ -643,16 +655,92 @@ export default function MemberProfile() {
         return;
       }
 
-      await ndef.write(testerUrlValue);
-      setTagMessage("Tester write success.");
-      addDebugLog("runTesterWrite:success", { testerUrlValue });
+      const writeAttempts: Array<{ mode: "string" | "url-record"; payload: string | { records: Array<{ recordType: string; data: string }> } }> = [
+        { mode: "string", payload: testerUrlValue },
+        { mode: "url-record", payload: { records: [{ recordType: "url", data: testerUrlValue }] } },
+      ];
+
+      let appliedMode: "string" | "url-record" | null = null;
+      let lastWriteError: unknown = null;
+
+      for (const attempt of writeAttempts) {
+        try {
+          await ndef.write(attempt.payload);
+          appliedMode = attempt.mode;
+          break;
+        } catch (error) {
+          lastWriteError = error;
+          addDebugLog("runTesterWrite:attempt-failed", {
+            mode: attempt.mode,
+            error: formatError(error),
+          });
+        }
+      }
+
+      if (!appliedMode) {
+        throw lastWriteError ?? new Error("No write mode succeeded.");
+      }
+
+      setTagMessage("Tester write command sent. Tap the same tag again to verify payload.");
+      addDebugLog("runTesterWrite:success", { testerUrlValue, mode: appliedMode });
+
+      setIsTesterReading(true);
+      const verifyReader = new ndefCtor();
+      await verifyReader.scan();
+
+      verifyReader.onreading = (event) => {
+        const firstRecord = event.message?.records?.[0];
+        const payload = decodeRecordPayload(firstRecord);
+
+        const readResult = {
+          serialNumber: event.serialNumber || null,
+          recordType: firstRecord?.recordType || null,
+          mediaType: firstRecord?.mediaType || null,
+          payload,
+        };
+
+        setTesterReadResult(readResult);
+        setTagMessage("Tester write verified by read.");
+        addDebugLog("runTesterWrite:verify-success", {
+          mode: appliedMode,
+          serialNumber: event.serialNumber,
+          payload,
+        });
+        setIsTesterReading(false);
+      };
+
+      verifyReader.onreadingerror = (error) => {
+        setTagMessage("Tester write sent, but verification read failed. Use Tester Read to confirm.");
+        addDebugLog("runTesterWrite:verify-read-error", {
+          mode: appliedMode,
+          error: formatError(error),
+        });
+        setIsTesterReading(false);
+      };
+
+      window.setTimeout(() => {
+        setIsTesterReading((prev) => {
+          if (!prev) {
+            return prev;
+          }
+
+          setTagMessage("Verification timed out. Tap Tester Read to confirm written payload.");
+          addDebugLog("runTesterWrite:verify-timeout", { mode: appliedMode });
+          return false;
+        });
+      }, 15000);
+
       setIsTesterWriting(false);
-    } catch {
-      setTagMessage("Tester write failed. Tag may be read-only or browser denied write.");
-      addDebugLog("runTesterWrite:error", { testerUrlValue });
+    } catch (error) {
+      setTagMessage("Tester write failed. Tag may be read-only, locked, or browser denied write.");
+      addDebugLog("runTesterWrite:error", {
+        testerUrlValue,
+        error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      });
+      setIsTesterReading(false);
       setIsTesterWriting(false);
     }
-  }, [addDebugLog, getNdefReaderCtor, testerUrlValue]);
+  }, [addDebugLog, decodeRecordPayload, getNdefReaderCtor, testerUrlValue]);
 
   useEffect(() => {
     if (!user) {
@@ -882,6 +970,68 @@ export default function MemberProfile() {
       },
       external: null,
     };
+
+  const normalizeTagUid = (rawUid?: string | null) => (rawUid || "").replace(/[^a-fA-F0-9]/g, "").toUpperCase();
+
+  const testerConfigReport = useMemo(() => {
+    if (!testerReadResult) {
+      return null;
+    }
+
+    const payload = testerReadResult.payload || "";
+    let payloadUrl: URL | null = null;
+    try {
+      payloadUrl = new URL(payload);
+    } catch {
+      payloadUrl = null;
+    }
+
+    const cntRaw = payloadUrl?.searchParams.get("cnt") ?? null;
+    const codeRaw = payloadUrl?.searchParams.get("code") ?? null;
+    const parsedCounter = cntRaw !== null ? Number(cntRaw) : null;
+    const hasValidCounter = parsedCounter !== null && Number.isInteger(parsedCounter) && parsedCounter >= 0;
+
+    const scannedUid = normalizeTagUid(testerReadResult.serialNumber);
+    const registeredUid = normalizeTagUid(effectiveTagStatus.tag.uid);
+    const memberCode = memberData.studentId || "";
+
+    const uidMatchesRegistered = Boolean(scannedUid && registeredUid && scannedUid === registeredUid);
+    const codeMatchesMember = Boolean(codeRaw && memberCode && codeRaw === memberCode);
+    const mirrorReady = Boolean(payloadUrl && hasValidCounter && codeRaw);
+
+    const recommendations: string[] = [];
+    if (!payloadUrl) recommendations.push("Payload is not a valid URL record.");
+    if (!hasValidCounter) recommendations.push("Missing/invalid cnt mirror value.");
+    if (!codeRaw) recommendations.push("Missing code query parameter.");
+    if (payloadUrl && hasValidCounter && codeRaw && !uidMatchesRegistered) {
+      recommendations.push("Scanned serial UID does not match currently linked UID.");
+    }
+    if (codeRaw && memberCode && !codeMatchesMember) {
+      recommendations.push("Payload code does not match your member reference ID.");
+    }
+    recommendations.push("Web NFC can write NDEF data but cannot set NTAG mirror config bytes (MIRROR_CONF/PAGE/BYTE).");
+
+    return {
+      payloadUrl: payloadUrl?.toString() ?? null,
+      counterRaw: cntRaw,
+      counterValue: hasValidCounter ? parsedCounter : null,
+      codeRaw,
+      scannedUid: testerReadResult.serialNumber || null,
+      registeredUid: effectiveTagStatus.tag.uid || null,
+      uidMatchesRegistered,
+      codeMatchesMember,
+      mirrorReady,
+      recommendations,
+    };
+  }, [testerReadResult, effectiveTagStatus.tag.uid, memberData.studentId]);
+
+  useEffect(() => {
+    if (!testerConfigReport) {
+      return;
+    }
+
+    addDebugLog("testerConfig:analysis", testerConfigReport);
+  }, [addDebugLog, testerConfigReport]);
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] flex items-center justify-center py-12">
@@ -1245,6 +1395,22 @@ export default function MemberProfile() {
                           <p><span className="font-semibold">Record type:</span> {testerReadResult.recordType || "N/A"}</p>
                           <p><span className="font-semibold">Media type:</span> {testerReadResult.mediaType || "N/A"}</p>
                           <p><span className="font-semibold">Payload:</span> {testerReadResult.payload || "N/A"}</p>
+                        </div>
+                      ) : null}
+
+                      {testerConfigReport ? (
+                        <div className="text-xs text-[#64748b] space-y-1 border border-[#e2e8f0] rounded p-2 bg-[#f8fafc]">
+                          <p><span className="font-semibold">Mirror ready:</span> {testerConfigReport.mirrorReady ? "Yes" : "No"}</p>
+                          <p><span className="font-semibold">Payload URL:</span> {testerConfigReport.payloadUrl || "Invalid URL payload"}</p>
+                          <p><span className="font-semibold">Counter (cnt):</span> {testerConfigReport.counterValue ?? testerConfigReport.counterRaw ?? "Missing"}</p>
+                          <p><span className="font-semibold">Code:</span> {testerConfigReport.codeRaw || "Missing"}</p>
+                          <p><span className="font-semibold">UID match (scanned vs linked):</span> {testerConfigReport.uidMatchesRegistered ? "Yes" : "No"}</p>
+                          <p><span className="font-semibold">Code match (payload vs member ID):</span> {testerConfigReport.codeMatchesMember ? "Yes" : "No"}</p>
+                          <ul className="list-disc list-inside space-y-1 pt-1">
+                            {testerConfigReport.recommendations.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
                         </div>
                       ) : null}
                     </div>

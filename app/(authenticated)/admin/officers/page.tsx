@@ -3,7 +3,7 @@ import AdminSidebar from '@/components/AdminSidebar';
 
 export default function AdminOfficersPage() {
   return (
-    <div className="flex min-h-screen bg-[#f8f9fa]">
+    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
       <AdminSidebar />
       <main className="flex-1 overflow-auto">
         <div className="p-8">
