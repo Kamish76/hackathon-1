@@ -84,7 +84,7 @@ export default function ScanPage() {
       .gte('event_timestamp', todayStart.toISOString())
       .order('event_timestamp', { ascending: false })
       .limit(50)
-      .then(({ data }) => {
+      .then(({ data }: { data: Array<{ id: string; direction: string; event_timestamp: string; person_registry: { full_name: string; person_type: string } }> | null }) => {
         if (!data) return;
         setRecentScans(
           data.map((e) => {
