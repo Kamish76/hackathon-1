@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 type PersonType = 'Student' | 'Staff' | 'Visitor' | 'Special Guest';
-type OperatorRole = 'Admin' | 'Taker';
+type OperatorRole = 'Admin' | 'Officer' | 'Taker';
 type CombinedRole = 'Admin' | 'Officer' | 'Student' | 'Staff' | 'Visitor';
 
 function toCombinedRole(personType: PersonType, operatorRole: OperatorRole | null): CombinedRole {
@@ -11,7 +11,7 @@ function toCombinedRole(personType: PersonType, operatorRole: OperatorRole | nul
     return 'Admin';
   }
 
-  if (operatorRole === 'Taker') {
+  if (operatorRole === 'Officer' || operatorRole === 'Taker') {
     return 'Officer';
   }
 
