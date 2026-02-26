@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Shield, Mail, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Shield, Mail, Lock, AlertCircle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginPage() {
@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const router = useRouter();
@@ -20,6 +21,10 @@ export default function LoginPage() {
     if (searchParams.get('error') === 'oauth_failed') {
       setError('Google authentication failed. Please try again.');
     }
+    if (searchParams.get('registered') === 'true') {
+      setSuccessMessage('Registration successful! Please login with your credentials.');
+      console.log('✅ User redirected after successful registration');
+    }
   }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -27,14 +32,21 @@ export default function LoginPage() {
     setError('');
     setIsLoading(true);
 
+    console.log('🔵 Login form submitted with email:', email);
+
     try {
+      console.log('Calling login function...');
       const success = await login(email, password);
+      
       if (success) {
+        console.log('✅ Login successful, redirecting to dashboard...');
         router.push('/dashboard');
       } else {
+        console.error('❌ Login failed: login function returned false');
         setError('Invalid email or password');
       }
-    } catch {
+    } catch (err) {
+      console.error('❌ Login failed with exception:', err);
       setError('An error occurred. Please try again.');
     } finally {
       setIsLoading(false);
@@ -45,10 +57,15 @@ export default function LoginPage() {
     setError('');
     setIsGoogleLoading(true);
 
+    console.log('🔵 Attempting Google sign-in...');
     const success = await loginWithGoogle();
+    
     if (!success) {
+      console.error('❌ Google sign-in failed');
       setError('Unable to start Google sign in. Please try again.');
       setIsGoogleLoading(false);
+    } else {
+      console.log('✅ Google sign-in initiated, redirecting...');
     }
   };
 
@@ -118,6 +135,16 @@ export default function LoginPage() {
               <h2 className="text-2xl font-bold text-[#0f172a] mb-2">Welcome back</h2>
               <p className="text-[#64748b]">Enter your credentials to access your account</p>
             </div>
+
+            {successMessage && (
+              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm text-green-800 font-medium">Success!</p>
+                  <p className="text-sm text-green-700">{successMessage}</p>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
