@@ -6,10 +6,21 @@ import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
 import { FlaskConical, RefreshCw } from 'lucide-react';
 
+interface PersonInfo {
+  full_name: string;
+  person_type: string;
+}
+
+type LookupState =
+  | { status: 'idle' }
+  | { status: 'found'; person: PersonInfo }
+  | { status: 'error' };
+
 export default function TestQRPage() {
   const { user } = useAuth();
   const [personId, setPersonId] = useState<string | null>(null);
   const [customId, setCustomId] = useState('');
+  const [lookup, setLookup] = useState<LookupState>({ status: 'idle' });
 
   // Resolve person_registry.id from auth_users bridge
   useEffect(() => {
@@ -17,13 +28,32 @@ export default function TestQRPage() {
     const supabase = createClient();
     supabase
       .from('auth_users')
-      .select('person_uuid')
-      .eq('user_id', user.id)
+      .select('person_id')
+      .eq('id', user.id)
       .single()
-      .then(({ data }: { data: { person_uuid: string } | null }) => {
-        if (data?.person_uuid) setPersonId(data.person_uuid);
+      .then(({ data }: { data: { person_id: string } | null }) => {
+        if (data?.person_id) setPersonId(data.person_id);
       });
   }, [user?.id]);
+
+  // Look up person details whenever the active UUID changes
+  const activeId = customId.trim() || personId;
+  useEffect(() => {
+    if (!activeId) return;
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .from('person_registry')
+      .select('full_name, person_type')
+      .eq('id', activeId)
+      .single()
+      .then(({ data, error }: { data: PersonInfo | null; error: { message: string } | null }) => {
+        if (cancelled) return;
+        if (data) setLookup({ status: 'found', person: data });
+        else if (error) setLookup({ status: 'error' });
+      });
+    return () => { cancelled = true; };
+  }, [activeId]);
 
   const qrValue = customId.trim()
     ? `REFERENCE_ID:${customId.trim()}`
@@ -59,17 +89,18 @@ export default function TestQRPage() {
           <p className="text-xs text-[#64748b] font-mono break-all">{qrValue || '—'}</p>
         </div>
 
-        {/* User info */}
-        {user && !customId && (
-          <div className="text-center">
-            <p className="text-sm font-medium text-[#0f172a]">{user.name}</p>
-            <p className="text-xs text-[#64748b]">{user.role}</p>
-            {personId
-              ? <p className="text-xs text-[#94a3b8] font-mono mt-0.5">person id: {personId}</p>
-              : <p className="text-xs text-[#ef4444] mt-0.5">No person_registry record found for this account</p>
-            }
-          </div>
-        )}
+        {/* Person info */}
+        <div className="text-center">
+          {lookup.status === 'found' ? (
+            <>
+              <p className="text-sm font-medium text-[#0f172a]">{lookup.person.full_name}</p>
+              <p className="text-xs text-[#64748b]">{lookup.person.person_type}</p>
+              <p className="text-xs text-[#94a3b8] font-mono mt-0.5">{activeId}</p>
+            </>
+          ) : lookup.status === 'error' ? (
+            <p className="text-xs text-[#ef4444]">UUID not found in person_registry</p>
+          ) : null}
+        </div>
 
         {/* Divider */}
         <div className="w-full border-t border-[#e2e8f0]" />

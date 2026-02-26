@@ -1,8 +1,8 @@
 # Current Database Structure Reference
 
 **Source of truth:** `docs/SCHOOL_INGRESS_EGRESS_INIT.sql`  
-**Last Updated:** 2026-02-26  
-**Applied Migrations:** 01, 02, 03, 04
+**Last Updated:** 2026-02-27  
+**Applied Migrations:** 01, 02, 03, 04, 05
 
 ## 1) Module Summary
 This schema adds an ingress/egress tracking module with:
@@ -305,9 +305,10 @@ Conditional FKs (constraint names):
   - Trigger helper for auth_users table that sets `NEW.updated_at = NOW()`
 - `public.has_school_operator_role(p_user_id uuid, p_role text)`
   - Returns whether user has active operator role (SECURITY DEFINER, bypasses RLS)
-  - `Officer` check matches `operator_role IN ('Officer', 'Taker', 'Admin')` — `'Taker'` retained for backward compatibility with pre-migration 03 rows
+  - `Officer` check matches `operator_role IN ('Officer', 'Taker', 'Admin')`
+  - `Taker` check matches `operator_role IN ('Officer', 'Taker', 'Admin')` — treats legacy Taker rows as Officers
   - `Admin` check matches `operator_role = 'Admin'` only
-  - Updated by migration 02 (fix RLS recursion), migration 03 (add Officer), migration 04 (add Taker compat)
+  - Updated by migration 02 (fix RLS recursion), migration 03 (add Officer), migration 04 (add Taker compat), migration 05 (Taker check also accepts Admin; explicit per-role policy grants added)
 - `public.prevent_duplicate_direction()`
   - Anti-passback trigger guard for `access_events`
   - Prevents consecutive identical directions unless manual override
@@ -367,6 +368,12 @@ Policy pattern summary:
 - Admin role: full mutation on configuration/role tables and privileged updates
 - Enforcement helper: `public.has_school_operator_role(auth.uid(), <role>)`
 
+Explicit officer policies (added by migration 05):
+- `"Officers can select person_registry"` — SELECT on `person_registry` for authenticated users with Officer or Admin role
+- `"Officers can select gates"` — SELECT on `gates` for authenticated users with Officer or Admin role
+- `"Officers can insert access_events"` — INSERT on `access_events` WITH CHECK for Officer or Admin role
+- `"Officers can select access_events"` — SELECT on `access_events` USING for Officer or Admin role
+
 ## 9) Seed Data
 Default gates inserted idempotently:
 - `GATE-01` Main Gate (pedestrian)
@@ -380,6 +387,7 @@ Default gates inserted idempotently:
 | 02 | `02_fix_school_operator_roles_rls_recursion.sql` | Replaces `has_school_operator_role` with a version that avoids infinite RLS recursion by using `SECURITY DEFINER`. Initially authored for `'Taker'`; updated by migration 03. |
 | 03 | `03_rename_taker_to_officer.sql` | Drops all check constraints on `school_operator_roles` dynamically, renames existing `operator_role = 'Taker'` rows to `'Officer'`, re-adds constraint as `CHECK (operator_role IN ('Admin', 'Officer'))`, and recreates `has_school_operator_role` for the new value. |
 | 04 | `04_fix_officer_rpc_taker_compat.sql` | Patches `has_school_operator_role` so the `Officer` role check also matches legacy `'Taker'` rows (backward compatibility for accounts not yet migrated by 03). Safe to run multiple times. |
+| 05 | `05_fix_rls_taker_role_alias.sql` | Recreates `has_school_operator_role` so both `'Officer'` and `'Taker'` role checks accept `IN ('Officer','Taker','Admin')`. Adds four explicit RLS policies: `Officers can select person_registry`, `Officers can select gates`, `Officers can insert access_events`, `Officers can select access_events`. These unlock the officer scan/attendance/feed pages end-to-end. |
 
 ## 11) Operational Notes
 - Script is additive and designed to be idempotent.
