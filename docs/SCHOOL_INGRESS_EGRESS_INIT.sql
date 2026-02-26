@@ -644,6 +644,61 @@ VALUES
   ('GATE-02', 'Vehicle Gate', 'Primary vehicle entry/exit lane', true)
 ON CONFLICT (gate_code) DO NOTHING;
 
+-- --------------------------------------------------------------------------
+-- SUPABASE STORAGE: PROFILE IMAGES (per-user folder ownership)
+-- Bucket name used by app default: profile-images
+-- Path convention: <auth.uid()>/avatar
+-- --------------------------------------------------------------------------
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'profile-images',
+  'profile-images',
+  false,
+  5242880,
+  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']::text[]
+)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS profile_images_select_own ON storage.objects;
+CREATE POLICY profile_images_select_own
+ON storage.objects
+FOR SELECT
+USING (
+  bucket_id = 'profile-images'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+
+DROP POLICY IF EXISTS profile_images_insert_own ON storage.objects;
+CREATE POLICY profile_images_insert_own
+ON storage.objects
+FOR INSERT
+WITH CHECK (
+  bucket_id = 'profile-images'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+
+DROP POLICY IF EXISTS profile_images_update_own ON storage.objects;
+CREATE POLICY profile_images_update_own
+ON storage.objects
+FOR UPDATE
+USING (
+  bucket_id = 'profile-images'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+)
+WITH CHECK (
+  bucket_id = 'profile-images'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+
+DROP POLICY IF EXISTS profile_images_delete_own ON storage.objects;
+CREATE POLICY profile_images_delete_own
+ON storage.objects
+FOR DELETE
+USING (
+  bucket_id = 'profile-images'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+
 COMMIT;
 
 -- ============================================================================

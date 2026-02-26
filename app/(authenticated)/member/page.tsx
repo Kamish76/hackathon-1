@@ -1,61 +1,335 @@
-'use client';
+"use client";
 
-import { QRCodeSVG } from 'qrcode.react';
-import { Calendar, Phone, User, LogOut } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import { Calendar, Phone, User } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+
+type AttendanceEntry = {
+  date: string;
+  time: string;
+  action: "Entered" | "Exited";
+  location: string;
+};
+
+type AccessEventRow = {
+  event_timestamp: string | null;
+  direction: "IN" | "OUT";
+  gate_id: string | null;
+  vehicle_session_id: string | null;
+};
+
+type GateRow = {
+  id: string;
+  gate_name: string;
+};
+
+type ManifestRow = {
+  manifest_name: string;
+  scheduled_date: string;
+  direction: "IN" | "OUT" | "BOTH";
+};
+
+const createDefaultProfileImage = (name?: string) => {
+  const initial = (name?.trim()?.charAt(0) || "M").toUpperCase();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-size="96" fill="#0f172a">${initial}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
 
 export default function MemberProfile() {
-  const accentColor = '#1e293b';
+  const { user, isLoading } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const profileObjectUrlRef = useRef<string | null>(null);
+  const defaultProfileImage = useMemo(
+    () => createDefaultProfileImage(user?.name || user?.email || "Member"),
+    [user?.name, user?.email]
+  );
+  const profileImageBucket = process.env.NEXT_PUBLIC_SUPABASE_PROFILE_IMAGE_BUCKET || "profile-images";
 
-  const memberData = {
-    name: 'Jake C',
-    birthDate: '01/15/1998',
-    contactNumber: '+1 (555) 123-4567',
-    studentId: 'STU-2024-001',
-    profileImage:
-      '/jeyk.png' // replace with your new picture file placed in public/ folder
+  const [memberData, setMemberData] = useState({
+    name: "",
+    birthDate: "",
+    contactNumber: "",
+    studentId: "",
+    profileImage: defaultProfileImage,
+  });
+
+  const [idStatus, setIdStatus] = useState({
+    account: "ACTIVE",
+    validThru: "N/A",
+    clearance: "Member",
+  });
+
+  const [emergencyInfo, setEmergencyInfo] = useState({
+    name: "",
+    phone: "",
+    bloodType: "",
+    allergies: "",
+  });
+
+  const [emergencyContacts, setEmergencyContacts] = useState<string[]>([]);
+  const [vehicleInfo, setVehicleInfo] = useState({ makeModel: "", plate: "", permit: "N/A" });
+  const [announcements, setAnnouncements] = useState<string[]>([]);
+  const [stats, setStats] = useState({ entriesThisWeek: 0, mostUsedGate: "N/A" });
+  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceEntry[]>([]);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [profileImageLoading, setProfileImageLoading] = useState(false);
+
+  const getProfileImagePath = (userId: string) => `${userId}/avatar`;
+
+  const setProfileImageFromStorage = async (userId: string) => {
+    const { data, error } = await supabase.storage
+      .from(profileImageBucket)
+      .download(getProfileImagePath(userId));
+
+    if (error || !data) {
+      setMemberData((prev) => ({ ...prev, profileImage: createDefaultProfileImage(prev.name || user?.name) }));
+      return;
+    }
+
+    if (profileObjectUrlRef.current) {
+      URL.revokeObjectURL(profileObjectUrlRef.current);
+      profileObjectUrlRef.current = null;
+    }
+
+    const objectUrl = URL.createObjectURL(data);
+    profileObjectUrlRef.current = objectUrl;
+    setMemberData((prev) => ({ ...prev, profileImage: objectUrl }));
   };
 
-  const idStatus = {
-    account: 'ACTIVE',
-    validThru: 'Dec 2026',
-    clearance: 'Undergraduate'
+  const handleProfileImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      return;
+    }
+
+    if (!user) {
+      event.target.value = "";
+      return;
+    }
+
+    setProfileImageLoading(true);
+
+    await supabase.storage
+      .from(profileImageBucket)
+      .upload(getProfileImagePath(user.id), file, {
+        upsert: true,
+        contentType: file.type,
+      });
+
+    await setProfileImageFromStorage(user.id);
+
+    event.target.value = "";
+    setProfileImageLoading(false);
   };
 
-  const emergencyInfo = {
-    name: 'Mary C',
-    phone: '+1 (555) 765-4321',
-    bloodType: 'O+',
-    allergies: 'Peanuts'
+  const handleRemoveProfileImage = async () => {
+    if (!user) {
+      return;
+    }
+
+    setProfileImageLoading(true);
+
+    await supabase.storage
+      .from(profileImageBucket)
+      .remove([getProfileImagePath(user.id)]);
+
+    if (profileObjectUrlRef.current) {
+      URL.revokeObjectURL(profileObjectUrlRef.current);
+      profileObjectUrlRef.current = null;
+    }
+
+    setMemberData((prev) => ({ ...prev, profileImage: defaultProfileImage }));
+    setProfileImageLoading(false);
   };
 
-  const vehicleInfo = {
-    makeModel: '2010 Nissan Sentra',
-    plate: 'XYZ-1234',
-    permit: 'Active'
-  };
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
 
-  const announcements = [
-    'Main Gate under maintenance from 10 PM - 12 AM.',
-    'NFC system offline, please use QR fallback.',
-    'Holiday gate hours in effect.'
-  ];
+    void setProfileImageFromStorage(user.id);
 
-  const stats = {
-    entriesThisWeek: 14,
-    mostUsedGate: 'Main Gate'
-  };
+    return () => {
+      if (profileObjectUrlRef.current) {
+        URL.revokeObjectURL(profileObjectUrlRef.current);
+        profileObjectUrlRef.current = null;
+      }
+    };
+  }, [supabase, user, profileImageBucket]);
 
-  const attendanceHistory = [
-    { date: '2026-02-25', time: '08:00', action: 'Entered', location: 'VSU Main Gate - Entry' },
-    { date: '2026-02-25', time: '16:30', action: 'Exited', location: 'VSU Main Gate - Exit' },
-    { date: '2026-02-24', time: '08:05', action: 'Entered', location: 'Lower Campus Pedestrian Gate - Entry' },
-    { date: '2026-02-24', time: '16:45', action: 'Exited', location: 'Lower Campus Pedestrian Gate - Exit' }
-  ];
+  useEffect(() => {
+    const loadMemberData = async () => {
+      if (!user) {
+        setPageLoading(false);
+        return;
+      }
+
+      const { data: person } = await supabase
+        .from("person_registry")
+        .select("id, person_type, full_name, email, external_identifier, linked_user_id, is_active")
+        .or(`linked_user_id.eq.${user.id},email.eq.${user.email}`)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      if (person) {
+        setMemberData((prev) => ({
+          ...prev,
+          name: person.full_name || user.name || "Member",
+          birthDate: "",
+          contactNumber: person.email || user.email || "",
+          studentId: person.external_identifier || person.id,
+        }));
+
+        setIdStatus({
+          account: person.is_active ? "ACTIVE" : "INACTIVE",
+          validThru: "N/A",
+          clearance: person.person_type || "Member",
+        });
+
+        setEmergencyInfo({
+          name: "Not set",
+          phone: "Not set",
+          bloodType: "Not set",
+          allergies: "Not set",
+        });
+
+        setEmergencyContacts(["No additional emergency contacts recorded."]);
+
+        const { data: events } = await supabase
+          .from("access_events")
+          .select("event_timestamp, direction, gate_id, vehicle_session_id")
+          .eq("person_id", person.id)
+          .order("event_timestamp", { ascending: false })
+          .limit(20);
+
+        let gateMap: Record<string, string> = {};
+        const gateIds = [...new Set(((events || []) as AccessEventRow[]).map((event: AccessEventRow) => event.gate_id).filter(Boolean))] as string[];
+        if (gateIds.length > 0) {
+          const { data: gates } = await supabase
+            .from("gates")
+            .select("id, gate_name")
+            .in("id", gateIds);
+
+          gateMap = ((gates || []) as GateRow[]).reduce((acc: Record<string, string>, gate: GateRow) => {
+            acc[gate.id] = gate.gate_name;
+            return acc;
+          }, {} as Record<string, string>);
+        }
+
+        if (events && events.length > 0) {
+          const mappedHistory: AttendanceEntry[] = (events as AccessEventRow[]).map((event: AccessEventRow) => {
+            const timestamp = event.event_timestamp ? new Date(event.event_timestamp) : null;
+            const date = timestamp ? timestamp.toISOString().slice(0, 10) : "";
+            const time = timestamp
+              ? timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
+              : "";
+
+            return {
+              date,
+              time,
+              action: event.direction === "IN" ? "Entered" : "Exited",
+              location: (event.gate_id ? gateMap[event.gate_id] : undefined) || "Unknown Gate",
+            };
+          });
+
+          setAttendanceHistory(mappedHistory);
+
+          const weekStart = new Date();
+          weekStart.setHours(0, 0, 0, 0);
+          weekStart.setDate(weekStart.getDate() - 7);
+
+          const entriesThisWeek = (events as AccessEventRow[]).filter(
+            (event: AccessEventRow) => event.direction === "IN" && event.event_timestamp && new Date(event.event_timestamp) >= weekStart
+          ).length;
+
+          const gateCounts = mappedHistory.reduce((acc, entry) => {
+            acc[entry.location] = (acc[entry.location] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+
+          const mostUsedGate =
+            Object.entries(gateCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A";
+
+          setStats({ entriesThisWeek, mostUsedGate });
+
+          const latestVehicleSessionId = (events as AccessEventRow[]).find((event: AccessEventRow) => event.vehicle_session_id)?.vehicle_session_id;
+          if (latestVehicleSessionId) {
+            const { data: session } = await supabase
+              .from("vehicle_sessions")
+              .select("vehicle_id")
+              .eq("id", latestVehicleSessionId)
+              .maybeSingle();
+
+            if (session?.vehicle_id) {
+              const { data: vehicle } = await supabase
+                .from("vehicle_registry")
+                .select("plate_number, vehicle_type, is_active")
+                .eq("id", session.vehicle_id)
+                .maybeSingle();
+
+              if (vehicle) {
+                setVehicleInfo({
+                  makeModel: vehicle.vehicle_type || "Unknown",
+                  plate: vehicle.plate_number || "N/A",
+                  permit: vehicle.is_active ? "Active" : "Inactive",
+                });
+              }
+            }
+          }
+        }
+
+        const today = new Date().toISOString().slice(0, 10);
+        const { data: manifests } = await supabase
+          .from("manifests")
+          .select("manifest_name, scheduled_date, direction")
+          .in("status", ["ACTIVE", "DRAFT"])
+          .gte("scheduled_date", today)
+          .order("scheduled_date", { ascending: true })
+          .limit(3);
+
+        if (manifests && manifests.length > 0) {
+          setAnnouncements(
+            (manifests as ManifestRow[]).map(
+              (manifest: ManifestRow) => `${manifest.manifest_name} - ${manifest.direction} (${manifest.scheduled_date})`
+            )
+          );
+        } else {
+          setAnnouncements(["No active announcements available."]);
+        }
+      } else {
+        setMemberData((prev) => ({ ...prev, name: user.name || user.email || "Member", contactNumber: user.email || "" }));
+        setAnnouncements(["No active announcements available."]);
+      }
+
+      setPageLoading(false);
+    };
+
+    void loadMemberData();
+  }, [supabase, user]);
+
+  if (isLoading || pageLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa]">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-[#e2e8f0] border-t-[#1e293b] rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-[#64748b]">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   const qrCodeValue = JSON.stringify({
     studentId: memberData.studentId,
     name: memberData.name,
-    contactNumber: memberData.contactNumber
+    contactNumber: memberData.contactNumber,
   });
 
   return (
@@ -71,18 +345,43 @@ export default function MemberProfile() {
               <span className="text-sm italic">{idStatus.clearance}</span>
             </div>
             {/* Combined profile/details card */}
-            <div className="bg-white rounded-2xl shadow-xl border-t-4 border-[#1e293b] p-8 md:p-12 relative flex flex-col items-center">
+            <div className="bg-white rounded-2xl shadow-xl border-t-4 border-[#1e293b] p-8 md:p-12 flex flex-col items-center">
               {/* Avatar */}
-              <div className="absolute -top-14">
+              <div>
                 <img
                   src={memberData.profileImage}
                   alt={memberData.name}
                   className="w-28 h-28 md:w-32 md:h-32 rounded-full border-4 border-[#1e293b] shadow-md object-cover"
                 />
               </div>
-              <div className="pt-16 text-center">
+              <div className="pt-4 text-center">
                 <h1 className="text-2xl font-semibold text-[#0f172a]">{memberData.name}</h1>
-                <p className="text-sm text-[#64748b] mt-1">Student</p>
+                <p className="text-sm text-[#64748b] mt-1">{idStatus.clearance}</p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleProfileImageChange}
+                />
+                <div className="mt-2 flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={profileImageLoading}
+                  >
+                    {profileImageLoading ? "Saving..." : "Change Photo"}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                    onClick={handleRemoveProfileImage}
+                    disabled={profileImageLoading}
+                  >
+                    Remove Photo
+                  </button>
+                </div>
               </div>
               {/* basic information under header */}
               <div className="mt-8 w-full">
@@ -143,6 +442,7 @@ export default function MemberProfile() {
               <p><span className="font-semibold">Phone:</span> {emergencyInfo.phone}</p>
               <p><span className="font-semibold">Blood Type:</span> {emergencyInfo.bloodType}</p>
               <p><span className="font-semibold">Allergies:</span> {emergencyInfo.allergies}</p>
+              <p className="mt-2"><span className="font-semibold">Extra:</span> {emergencyContacts[0] || 'None'}</p>
             </div>
 
             {/* Vehicle Info card */}
