@@ -65,17 +65,20 @@ export default function MemberProfile() {
   const [emergencyInfo, setEmergencyInfo] = useState({
     name: "",
     phone: "",
-    bloodType: "",
-    allergies: "",
+    contacts: "",
+    remarks: "",
   });
 
-  const [emergencyContacts, setEmergencyContacts] = useState<string[]>([]);
+  const [personRegistryId, setPersonRegistryId] = useState<string | null>(null);
   const [vehicleInfo, setVehicleInfo] = useState({ makeModel: "", plate: "", permit: "N/A" });
   const [announcements, setAnnouncements] = useState<string[]>([]);
   const [stats, setStats] = useState({ entriesThisWeek: 0, mostUsedGate: "N/A" });
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceEntry[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [profileImageLoading, setProfileImageLoading] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
 
   const getProfileImagePath = (userId: string) => `${userId}/avatar`;
 
@@ -149,6 +152,75 @@ export default function MemberProfile() {
     setProfileImageLoading(false);
   };
 
+  const handleSaveAdditionalInfo = async () => {
+    if (!user) {
+      setSaveMessage("Unable to save: user not authenticated.");
+      return;
+    }
+
+    setIsSavingProfile(true);
+    setSaveMessage("");
+
+    const profilePayload = {
+      birth_date: memberData.birthDate || null,
+      emergency_contact_name: emergencyInfo.name || null,
+      emergency_contact_phone: emergencyInfo.phone || null,
+      emergency_contacts: emergencyInfo.contacts || null,
+      remarks: emergencyInfo.remarks || null,
+    };
+
+    let currentPersonRegistryId = personRegistryId;
+
+    if (!currentPersonRegistryId) {
+      const { data: insertedPerson, error: insertError } = await supabase
+        .from("person_registry")
+        .insert({
+          linked_user_id: user.id,
+          person_type: "Student",
+          full_name: memberData.name || user.name || user.email || "Member",
+          email: user.email || null,
+          is_active: true,
+          ...profilePayload,
+        })
+        .select("id")
+        .single();
+
+      if (insertError || !insertedPerson?.id) {
+        const errorText = insertError?.message || "Please try again.";
+        if (errorText.includes("schema cache") || errorText.includes("column")) {
+          setSaveMessage("Failed to save profile details: database columns are missing. Run docs/database/PATCH_person_registry_additional_fields.sql in Supabase SQL Editor.");
+        } else {
+          setSaveMessage(`Failed to save profile details. ${errorText}`);
+        }
+        setIsSavingProfile(false);
+        return;
+      }
+
+      currentPersonRegistryId = insertedPerson.id;
+      setPersonRegistryId(insertedPerson.id);
+    } else {
+      const { error: updateError } = await supabase
+        .from("person_registry")
+        .update(profilePayload)
+        .eq("id", currentPersonRegistryId);
+
+      if (updateError) {
+        if (updateError.message.includes("schema cache") || updateError.message.includes("column")) {
+          setSaveMessage("Failed to save profile details: database columns are missing. Run docs/database/PATCH_person_registry_additional_fields.sql in Supabase SQL Editor.");
+        } else {
+          setSaveMessage(`Failed to save profile details. ${updateError.message}`);
+        }
+        setIsSavingProfile(false);
+        return;
+      }
+    }
+
+    setSaveMessage("Profile details saved.");
+    setIsEditMode(false);
+
+    setIsSavingProfile(false);
+  };
+
   useEffect(() => {
     if (!user) {
       return;
@@ -173,17 +245,18 @@ export default function MemberProfile() {
 
       const { data: person } = await supabase
         .from("person_registry")
-        .select("id, person_type, full_name, email, external_identifier, linked_user_id, is_active")
+        .select("id, person_type, full_name, email, external_identifier, linked_user_id, is_active, birth_date, emergency_contact_name, emergency_contact_phone, emergency_contacts, remarks")
         .or(`linked_user_id.eq.${user.id},email.eq.${user.email}`)
         .eq("is_active", true)
         .limit(1)
         .maybeSingle();
 
       if (person) {
+        setPersonRegistryId(person.id);
         setMemberData((prev) => ({
           ...prev,
           name: person.full_name || user.name || "Member",
-          birthDate: "",
+          birthDate: person.birth_date || "",
           contactNumber: person.email || user.email || "",
           studentId: person.external_identifier || person.id,
         }));
@@ -195,13 +268,11 @@ export default function MemberProfile() {
         });
 
         setEmergencyInfo({
-          name: "Not set",
-          phone: "Not set",
-          bloodType: "Not set",
-          allergies: "Not set",
+          name: person.emergency_contact_name || "",
+          phone: person.emergency_contact_phone || "",
+          contacts: person.emergency_contacts || "",
+          remarks: person.remarks || "",
         });
-
-        setEmergencyContacts(["No additional emergency contacts recorded."]);
 
         const { data: events } = await supabase
           .from("access_events")
@@ -305,6 +376,7 @@ export default function MemberProfile() {
           setAnnouncements(["No active announcements available."]);
         }
       } else {
+        setPersonRegistryId(null);
         setMemberData((prev) => ({ ...prev, name: user.name || user.email || "Member", contactNumber: user.email || "" }));
         setAnnouncements(["No active announcements available."]);
       }
@@ -326,11 +398,7 @@ export default function MemberProfile() {
     );
   }
 
-  const qrCodeValue = JSON.stringify({
-    studentId: memberData.studentId,
-    name: memberData.name,
-    contactNumber: memberData.contactNumber,
-  });
+  const qrCodeValue = memberData.studentId ? `REFERENCE_ID:${memberData.studentId}` : "REFERENCE_ID:UNAVAILABLE";
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] flex items-center justify-center py-12">
@@ -382,6 +450,45 @@ export default function MemberProfile() {
                     Remove Photo
                   </button>
                 </div>
+                <div className="mt-2 flex items-center justify-center gap-2">
+                  {!isEditMode ? (
+                    <button
+                      type="button"
+                      className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                      onClick={() => {
+                        setSaveMessage("");
+                        setIsEditMode(true);
+                      }}
+                    >
+                      Edit Details
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                        onClick={handleSaveAdditionalInfo}
+                        disabled={isSavingProfile}
+                      >
+                        {isSavingProfile ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                        onClick={() => {
+                          setIsEditMode(false);
+                          setSaveMessage("");
+                        }}
+                        disabled={isSavingProfile}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </div>
+                {saveMessage ? (
+                  <p className="mt-2 text-xs text-[#64748b]">{saveMessage}</p>
+                ) : null}
               </div>
               {/* basic information under header */}
               <div className="mt-8 w-full">
@@ -395,7 +502,18 @@ export default function MemberProfile() {
                     <Calendar className="w-4 h-4 text-[#1e293b]" />
                     <p className="text-xs text-[#64748b] uppercase tracking-wide">Birth date</p>
                   </div>
-                  <p className="ml-6 text-lg text-[#0f172a] font-medium">{memberData.birthDate}</p>
+                  {isEditMode ? (
+                    <div className="ml-6">
+                      <input
+                        type="date"
+                        value={memberData.birthDate}
+                        onChange={(event) => setMemberData((prev) => ({ ...prev, birthDate: event.target.value }))}
+                        className="text-sm border border-[#e2e8f0] rounded px-2 py-1"
+                      />
+                    </div>
+                  ) : (
+                    <p className="ml-6 text-lg text-[#0f172a] font-medium">{memberData.birthDate || "Not set"}</p>
+                  )}
                   <div className="flex items-center justify-center md:justify-start gap-2">
                     <Phone className="w-4 h-4 text-[#1e293b]" />
                     <p className="text-xs text-[#64748b] uppercase tracking-wide">Contact</p>
@@ -438,11 +556,53 @@ export default function MemberProfile() {
             {/* Emergency Info card */}
             <div className="bg-white rounded-2xl shadow-lg border border-[#e9eef6] p-6">
               <h4 className="font-semibold text-[#1e293b] mb-2">Emergency Info</h4>
-              <p><span className="font-semibold">Contact:</span> {emergencyInfo.name}</p>
-              <p><span className="font-semibold">Phone:</span> {emergencyInfo.phone}</p>
-              <p><span className="font-semibold">Blood Type:</span> {emergencyInfo.bloodType}</p>
-              <p><span className="font-semibold">Allergies:</span> {emergencyInfo.allergies}</p>
-              <p className="mt-2"><span className="font-semibold">Extra:</span> {emergencyContacts[0] || 'None'}</p>
+              {isEditMode ? (
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-xs text-[#64748b] uppercase tracking-wide">Primary contact name</p>
+                    <input
+                      type="text"
+                      value={emergencyInfo.name}
+                      onChange={(event) => setEmergencyInfo((prev) => ({ ...prev, name: event.target.value }))}
+                      className="mt-1 w-full border border-[#e2e8f0] rounded px-2 py-1 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs text-[#64748b] uppercase tracking-wide">Primary contact phone</p>
+                    <input
+                      type="text"
+                      value={emergencyInfo.phone}
+                      onChange={(event) => setEmergencyInfo((prev) => ({ ...prev, phone: event.target.value }))}
+                      className="mt-1 w-full border border-[#e2e8f0] rounded px-2 py-1 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs text-[#64748b] uppercase tracking-wide">Other emergency contacts</p>
+                    <textarea
+                      value={emergencyInfo.contacts}
+                      onChange={(event) => setEmergencyInfo((prev) => ({ ...prev, contacts: event.target.value }))}
+                      className="mt-1 w-full border border-[#e2e8f0] rounded px-2 py-1 text-sm"
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs text-[#64748b] uppercase tracking-wide">Remarks</p>
+                    <textarea
+                      value={emergencyInfo.remarks}
+                      onChange={(event) => setEmergencyInfo((prev) => ({ ...prev, remarks: event.target.value }))}
+                      className="mt-1 w-full border border-[#e2e8f0] rounded px-2 py-1 text-sm"
+                      rows={3}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p><span className="font-semibold">Contact:</span> {emergencyInfo.name || "Not set"}</p>
+                  <p><span className="font-semibold">Phone:</span> {emergencyInfo.phone || "Not set"}</p>
+                  <p><span className="font-semibold">Other Contacts:</span> {emergencyInfo.contacts || "Not set"}</p>
+                  <p><span className="font-semibold">Remarks:</span> {emergencyInfo.remarks || "Not set"}</p>
+                </>
+              )}
             </div>
 
             {/* Vehicle Info card */}

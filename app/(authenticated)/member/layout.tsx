@@ -1,14 +1,11 @@
 "use client";
 
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useState } from "react";
 import { LogOut } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function MemberLayout({ children }: { children: ReactNode }) {
-  const { user, logout } = useAuth();
-  const supabase = useMemo(() => createClient(), []);
-  const [pageTitle, setPageTitle] = useState("MEMBER");
+  const { logout } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const handleLogout = async () => {
@@ -21,33 +18,16 @@ export default function MemberLayout({ children }: { children: ReactNode }) {
     setIsLoggingOut(false);
   };
 
-  useEffect(() => {
-    const loadPersonType = async () => {
-      if (!user) {
-        setPageTitle("MEMBER");
-        return;
-      }
-
-      const { data: person } = await supabase
-        .from("person_registry")
-        .select("person_type")
-        .or(`linked_user_id.eq.${user.id},email.eq.${user.email}`)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
-
-      const resolvedTitle = (person?.person_type || "Member").toUpperCase();
-      setPageTitle(resolvedTitle);
-    };
-
-    void loadPersonType();
-  }, [supabase, user]);
-
   return (
     <>
       <header className="bg-[#1e293b] text-white py-4 shadow">
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
-          <span className="text-xl md:text-2xl font-bold">{pageTitle}</span>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-white text-[#1e293b] flex items-center justify-center font-bold text-sm">
+              K
+            </div>
+            <span className="text-xl md:text-2xl font-bold tracking-wide">KYUBI</span>
+          </div>
           <button
             type="button"
             onClick={handleLogout}

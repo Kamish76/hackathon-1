@@ -61,6 +61,26 @@ WHERE c.table_schema = 'public'
 ORDER BY c.table_name, c.ordinal_position;
 
 -- --------------------------------------------------------------------------
+-- 2.1) PERSON REGISTRY: ADDITIONAL / EMERGENCY ATTRIBUTES
+-- --------------------------------------------------------------------------
+SELECT
+  c.column_name,
+  c.data_type,
+  c.is_nullable,
+  c.column_default
+FROM information_schema.columns c
+WHERE c.table_schema = 'public'
+  AND c.table_name = 'person_registry'
+  AND c.column_name IN (
+    'birth_date',
+    'emergency_contact_name',
+    'emergency_contact_phone',
+    'emergency_contacts',
+    'remarks'
+  )
+ORDER BY c.column_name;
+
+-- --------------------------------------------------------------------------
 -- 3) PRIMARY / UNIQUE / CHECK CONSTRAINTS
 -- --------------------------------------------------------------------------
 SELECT

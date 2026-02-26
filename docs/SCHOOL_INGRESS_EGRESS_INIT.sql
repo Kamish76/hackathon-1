@@ -66,6 +66,13 @@ CREATE INDEX IF NOT EXISTS idx_person_registry_person_type ON public.person_regi
 CREATE INDEX IF NOT EXISTS idx_person_registry_linked_user_id ON public.person_registry(linked_user_id);
 CREATE INDEX IF NOT EXISTS idx_person_registry_is_active ON public.person_registry(is_active);
 
+ALTER TABLE public.person_registry
+  ADD COLUMN IF NOT EXISTS birth_date date,
+  ADD COLUMN IF NOT EXISTS emergency_contact_name text,
+  ADD COLUMN IF NOT EXISTS emergency_contact_phone text,
+  ADD COLUMN IF NOT EXISTS emergency_contacts text,
+  ADD COLUMN IF NOT EXISTS remarks text;
+
 CREATE TABLE IF NOT EXISTS public.school_operator_roles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
