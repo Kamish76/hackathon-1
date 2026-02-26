@@ -31,11 +31,11 @@ export default function AdminDashboard() {
         
         <nav className="flex-1 p-4">
           <div className="space-y-1">
-            <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#f1f5f9] text-[#1e293b] font-medium">
+            <a href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#f1f5f9] text-[#1e293b] font-medium">
               <BarChart3 className="w-5 h-5" />
               Dashboard
             </a>
-            <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
+            <a href="/people" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
               <Users className="w-5 h-5" />
               People
             </a>
