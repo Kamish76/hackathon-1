@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import type { User as SupabaseUser } from '@supabase/supabase-js';
+import type { User as SupabaseUser, AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 
 interface User {
@@ -61,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initializeAuth();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (!mounted) {
         return;
       }
