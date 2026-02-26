@@ -3,6 +3,8 @@
 import { useState, useMemo } from 'react';
 import { Search, Filter, Calendar, Download, Shield, BarChart3, Users, Activity, Settings, LogOut, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import ProtectedRoute from '@/components/ProtectedRoute';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AccessEvent {
   id: string;
@@ -37,7 +39,8 @@ const personTypes = ['All', 'Student', 'Staff', 'Visitor', 'Special Guest'];
 const directions = ['All', 'IN', 'OUT'];
 const gates = ['All', 'Main Gate', 'Side Gate', 'VIP Entrance'];
 
-export default function AccessEvents() {
+function AccessEventsContent() {
+  const { user, logout } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('All');
   const [selectedDirection, setSelectedDirection] = useState('All');
@@ -88,7 +91,7 @@ export default function AccessEvents() {
         
         <nav className="flex-1 p-4">
           <div className="space-y-1">
-            <a href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
+            <a href="/dashboard" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
               <BarChart3 className="w-5 h-5" />
               Dashboard
             </a>
@@ -110,13 +113,13 @@ export default function AccessEvents() {
         <div className="p-4 border-t border-[#e2e8f0]">
           <div className="flex items-center gap-3 px-3 py-2">
             <div className="w-8 h-8 rounded-full bg-[#1e293b] flex items-center justify-center text-white text-sm font-medium">
-              JD
+              {user?.name.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium text-[#0f172a]">John Doe</p>
-              <p className="text-xs text-[#64748b]">Administrator</p>
+              <p className="text-sm font-medium text-[#0f172a]">{user?.name}</p>
+              <p className="text-xs text-[#64748b]">{user?.role}</p>
             </div>
-            <LogOut className="w-4 h-4 text-[#64748b] cursor-pointer hover:text-[#ef4444]" />
+            <LogOut className="w-4 h-4 text-[#64748b] cursor-pointer hover:text-[#ef4444]" onClick={logout} />
           </div>
         </div>
       </aside>
@@ -372,5 +375,13 @@ export default function AccessEvents() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function AccessEvents() {
+  return (
+    <ProtectedRoute>
+      <AccessEventsContent />
+    </ProtectedRoute>
   );
 }
