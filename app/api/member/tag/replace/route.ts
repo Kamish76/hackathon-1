@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { callNfcApi, NfcApiError } from "@/lib/nfcApi";
 import {
   appendTagEvent,
-  getCooldownState,
   getMemberCode,
   normalizeUid,
   resolveMemberContext,
@@ -26,22 +25,10 @@ export async function PATCH(request: NextRequest) {
     return context.error;
   }
 
-  const { adminClient, person, settings, user } = context;
+  const { adminClient, person, user } = context;
 
   if (person.nfc_tag_status !== "active" || !person.nfc_tag_id) {
     return NextResponse.json({ error: "Only active tags can be replaced." }, { status: 400 });
-  }
-
-  const cooldown = getCooldownState(person, settings);
-  if (settings.cooldown_enabled && !cooldown.canChangeNow) {
-    return NextResponse.json(
-      {
-        error: "Tag change cooldown is active.",
-        next_allowed_at: cooldown.nextAllowedAt,
-        remaining_hours: cooldown.remainingHours,
-      },
-      { status: 429 }
-    );
   }
 
   const payload = (await request.json()) as ReplaceTagPayload;
