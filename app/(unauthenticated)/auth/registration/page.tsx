@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Shield, Mail, Lock, AlertCircle, Eye, EyeOff, User, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function RegistrationPage() {
   const [formData, setFormData] = useState({
@@ -18,6 +19,7 @@ export default function RegistrationPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const { signup } = useAuth();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -31,42 +33,66 @@ export default function RegistrationPage() {
     e.preventDefault();
     setError('');
 
+    console.log('🔵 Registration form submitted with data:', {
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      email: formData.email,
+      role: formData.role,
+    });
+
     // Validation
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
       setError('First name and last name are required');
+      console.error('❌ Validation failed: Missing name');
       return;
     }
 
     if (!formData.email.trim()) {
       setError('Email is required');
+      console.error('❌ Validation failed: Missing email');
       return;
     }
 
     if (!formData.password) {
       setError('Password is required');
+      console.error('❌ Validation failed: Missing password');
       return;
     }
 
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters');
+      console.error('❌ Validation failed: Password too short');
       return;
     }
 
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
+      console.error('❌ Validation failed: Passwords do not match');
       return;
     }
 
+    console.log('✅ Validation passed, calling signup function...');
     setIsLoading(true);
 
     try {
-      // Simulate registration - in a real app, this would call an API
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
-      // For now, just redirect to login
-      router.push('/auth/login');
-    } catch {
-      setError('An error occurred during registration. Please try again.');
+      const success = await signup(
+        formData.email,
+        formData.password,
+        formData.firstName,
+        formData.lastName,
+        formData.role
+      );
+
+      if (success) {
+        console.log('✅ Registration successful, redirecting to login...');
+        router.push('/auth/login?registered=true');
+      } else {
+        console.error('❌ Registration failed: signup returned false');
+        setError('Registration failed. Please check the console for details and try again.');
+      }
+    } catch (err) {
+      console.error('❌ Registration failed with exception:', err);
+      setError('An error occurred during registration. Please check the console and try again.');
     } finally {
       setIsLoading(false);
     }

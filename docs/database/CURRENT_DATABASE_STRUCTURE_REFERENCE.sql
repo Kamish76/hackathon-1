@@ -27,7 +27,8 @@ WHERE table_schema = 'public'
     'vehicle_passengers',
     'manifests',
     'manifest_entries',
-    'override_logs'
+    'override_logs',
+    'auth_users'
   )
 ORDER BY table_name;
 
@@ -54,7 +55,8 @@ WHERE c.table_schema = 'public'
     'vehicle_passengers',
     'manifests',
     'manifest_entries',
-    'override_logs'
+    'override_logs',
+    'auth_users'
   )
 ORDER BY c.table_name, c.ordinal_position;
 
@@ -81,7 +83,8 @@ WHERE tc.table_schema = 'public'
     'vehicle_passengers',
     'manifests',
     'manifest_entries',
-    'override_logs'
+    'override_logs',
+    'auth_users'
   )
   AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE', 'CHECK')
 ORDER BY tc.table_name, tc.constraint_type, tc.constraint_name;
@@ -116,7 +119,8 @@ WHERE tc.table_schema = 'public'
     'vehicle_passengers',
     'manifests',
     'manifest_entries',
-    'override_logs'
+    'override_logs',
+    'auth_users'
   )
 ORDER BY tc.table_name, tc.constraint_name;
 
@@ -141,7 +145,8 @@ WHERE schemaname = 'public'
     'vehicle_passengers',
     'manifests',
     'manifest_entries',
-    'override_logs'
+    'override_logs',
+    'auth_users'
   )
 ORDER BY tablename, indexname;
 
@@ -158,8 +163,11 @@ JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'public'
   AND p.proname IN (
     'update_updated_at_column',
+    'update_auth_users_updated_at',
     'has_school_operator_role',
-    'prevent_duplicate_direction'
+    'prevent_duplicate_direction',
+    'create_person_registry_record',
+    'create_auth_users_record'
   )
 ORDER BY p.proname;
 
@@ -182,7 +190,8 @@ WHERE trigger_schema = 'public'
     'vehicle_registry',
     'vehicle_sessions',
     'access_events',
-    'manifests'
+    'manifests',
+    'auth_users'
   )
 ORDER BY event_object_table, trigger_name;
 
@@ -212,7 +221,8 @@ WHERE schemaname = 'public'
     'vehicle_passengers',
     'manifests',
     'manifest_entries',
-    'override_logs'
+    'override_logs',
+    'auth_users'
   )
 ORDER BY tablename;
 
@@ -241,6 +251,7 @@ WHERE schemaname = 'public'
     'vehicle_passengers',
     'manifests',
     'manifest_entries',
-    'override_logs'
+    'override_logs',
+    'auth_users'
   )
 ORDER BY tablename, policyname;
