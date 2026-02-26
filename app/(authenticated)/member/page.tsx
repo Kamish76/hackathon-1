@@ -222,33 +222,6 @@ export default function MemberProfile() {
     []
   );
 
-  const submitCounterScan = useCallback(
-    async (uid: string | undefined, counter: number) => {
-      const response = await fetch("/api/member/tag/scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          uid,
-          counter,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok && response.status !== 409) {
-        setTagMessage(result?.error || "Counter scan verification failed.");
-        addDebugLog("verifyCounterScan:api-error", { status: response.status, result });
-        return;
-      }
-
-      setLastScanResult(result as ScanVerificationResult);
-      setTagMessage(result?.message || "Scan verified.");
-      addDebugLog("verifyCounterScan:api-success", { status: response.status, result });
-      await loadTagStatus();
-    },
-    [addDebugLog, loadTagStatus]
-  );
-
   const setProfileImageFromStorage = useCallback(async (userId: string) => {
     const { data, error } = await supabase.storage
       .from(profileImageBucket)
@@ -411,6 +384,33 @@ export default function MemberProfile() {
     });
     setTagLoading(false);
   }, [addDebugLog]);
+
+  const submitCounterScan = useCallback(
+    async (uid: string | undefined, counter: number) => {
+      const response = await fetch("/api/member/tag/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uid,
+          counter,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok && response.status !== 409) {
+        setTagMessage(result?.error || "Counter scan verification failed.");
+        addDebugLog("verifyCounterScan:api-error", { status: response.status, result });
+        return;
+      }
+
+      setLastScanResult(result as ScanVerificationResult);
+      setTagMessage(result?.message || "Scan verified.");
+      addDebugLog("verifyCounterScan:api-success", { status: response.status, result });
+      await loadTagStatus();
+    },
+    [addDebugLog, loadTagStatus]
+  );
 
   const runTagAction = useCallback(
     async (action: "set" | "replace" | "deactivate") => {
