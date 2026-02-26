@@ -1,6 +1,7 @@
 'use client';
 
-import { Shield, BarChart3, Users, Activity, Settings, LogOut } from 'lucide-react';
+import { useState } from 'react';
+import { Shield, BarChart3, Users, Activity, Settings, LogOut, Bug, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 type ActivePage = 'dashboard' | 'people' | 'events' | 'checkpoints';
@@ -18,6 +19,7 @@ const navItems: { label: string; href: string; icon: React.ReactNode; page: Acti
 
 export default function AdminSidebar({ activePage }: AdminSidebarProps) {
   const { user, logout } = useAuth();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <aside className="w-64 bg-white border-r border-[#e2e8f0] flex flex-col shrink-0">
@@ -52,6 +54,31 @@ export default function AdminSidebar({ activePage }: AdminSidebarProps) {
               </a>
             );
           })}
+        </div>
+
+        {/* Settings */}
+        <div className="mt-4 pt-4 border-t border-[#e2e8f0]">
+          <button
+            onClick={() => setSettingsOpen((o) => !o)}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors"
+          >
+            <Settings className="w-5 h-5" />
+            <span className="flex-1 text-left">Settings</span>
+            {settingsOpen
+              ? <ChevronDown className="w-4 h-4" />
+              : <ChevronRight className="w-4 h-4" />}
+          </button>
+          {settingsOpen && (
+            <div className="ml-4 mt-1 space-y-1">
+              <a
+                href="/admin/settings/debug"
+                className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors text-sm"
+              >
+                <Bug className="w-4 h-4" />
+                Debug
+              </a>
+            </div>
+          )}
         </div>
       </nav>
 
