@@ -137,10 +137,26 @@ export default function MemberProfile() {
   const [isDetectingTag, setIsDetectingTag] = useState(false);
   const [isVerifyingCounterScan, setIsVerifyingCounterScan] = useState(false);
   const [lastScanResult, setLastScanResult] = useState<ScanVerificationResult | null>(null);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
 
   const isVehicleTabDisabled = personTypeLabel === "Visitor" || personTypeLabel === "Special Guest";
 
   const getProfileImagePath = (userId: string) => `${userId}/avatar`;
+
+  const addDebugLog = useCallback((message: string, details?: unknown) => {
+    const timestamp = new Date().toISOString();
+    const detailText = details
+      ? ` | ${typeof details === "string" ? details : JSON.stringify(details)}`
+      : "";
+    const line = `${timestamp} | ${message}${detailText}`;
+
+    setDebugLogs((prev) => [line, ...prev].slice(0, 40));
+    if (details !== undefined) {
+      console.log("[MemberTagDebug]", message, details);
+    } else {
+      console.log("[MemberTagDebug]", message);
+    }
+  }, []);
 
   const setProfileImageFromStorage = useCallback(async (userId: string) => {
     const { data, error } = await supabase.storage
@@ -283,24 +299,32 @@ export default function MemberProfile() {
 
   const loadTagStatus = useCallback(async () => {
     setTagLoading(true);
+    addDebugLog("loadTagStatus:start");
     const response = await fetch("/api/member/tag", { cache: "no-store" });
     const result = await response.json();
 
     if (!response.ok) {
       setTagMessage(result?.error || "Failed to load tag status.");
       setTagStatus(null);
+      addDebugLog("loadTagStatus:error", { status: response.status, result });
       setTagLoading(false);
       return;
     }
 
     setTagStatus(result as MemberTagStatusResponse);
     setTagMessage("");
+    addDebugLog("loadTagStatus:success", {
+      status: response.status,
+      tag: result?.tag,
+      cooldown: result?.cooldown,
+    });
     setTagLoading(false);
-  }, []);
+  }, [addDebugLog]);
 
   const runTagAction = useCallback(
     async (action: "set" | "replace" | "deactivate") => {
       setTagActionLoading(action);
+      addDebugLog("runTagAction:start", { action, detectedTagUid });
 
       const endpoint =
         action === "set"
@@ -329,18 +353,20 @@ export default function MemberProfile() {
           ? ` Next change allowed at ${new Date(result.next_allowed_at).toLocaleString()}.`
           : "";
         setTagMessage((result?.error || "Tag action failed.") + cooldownHint);
+        addDebugLog("runTagAction:error", { action, status: response.status, result });
         setTagActionLoading(null);
         return;
       }
 
       setTagMessage(result?.message || "Tag updated.");
+      addDebugLog("runTagAction:success", { action, status: response.status, result });
       if (action !== "deactivate") {
         setDetectedTagUid("");
       }
       await loadTagStatus();
       setTagActionLoading(null);
     },
-    [deactivateReason, detectedTagUid, loadTagStatus]
+    [addDebugLog, deactivateReason, detectedTagUid, loadTagStatus]
   );
 
   const detectTagUidAutomatically = useCallback(async () => {
@@ -354,11 +380,13 @@ export default function MemberProfile() {
 
     if (!ndefCtor) {
       setTagMessage("Web NFC is not supported on this browser/device.");
+      addDebugLog("detectTagUidAutomatically:unsupported");
       return;
     }
 
     setIsDetectingTag(true);
     setTagMessage("Tap the tag to read its UID automatically.");
+    addDebugLog("detectTagUidAutomatically:start");
 
     try {
       const ndef = new ndefCtor();
@@ -367,24 +395,28 @@ export default function MemberProfile() {
       ndef.onreading = (event) => {
         if (!event.serialNumber) {
           setTagMessage("Unable to read tag UID. Try another tap.");
+          addDebugLog("detectTagUidAutomatically:no-serial");
           setIsDetectingTag(false);
           return;
         }
 
         setDetectedTagUid(event.serialNumber);
         setTagMessage(`Tag detected: ${event.serialNumber}`);
+        addDebugLog("detectTagUidAutomatically:success", { serialNumber: event.serialNumber });
         setIsDetectingTag(false);
       };
 
       ndef.onreadingerror = () => {
         setTagMessage("Tag read error. Please tap again.");
+        addDebugLog("detectTagUidAutomatically:read-error");
         setIsDetectingTag(false);
       };
     } catch {
       setTagMessage("Unable to start NFC scanner. Allow NFC permission and try again.");
+      addDebugLog("detectTagUidAutomatically:scan-start-error");
       setIsDetectingTag(false);
     }
-  }, []);
+  }, [addDebugLog]);
 
   const verifyCounterScan = useCallback(async () => {
     const ndefCtor = (window as unknown as {
@@ -399,11 +431,13 @@ export default function MemberProfile() {
 
     if (!ndefCtor) {
       setTagMessage("Web NFC is not supported on this browser/device.");
+      addDebugLog("verifyCounterScan:unsupported");
       return;
     }
 
     setIsVerifyingCounterScan(true);
     setTagMessage("Tap the tag to verify counter and scan status.");
+    addDebugLog("verifyCounterScan:start");
 
     try {
       const ndef = new ndefCtor();
@@ -416,6 +450,7 @@ export default function MemberProfile() {
 
           if (!recordData) {
             setTagMessage("No NDEF URL payload found on tag.");
+            addDebugLog("verifyCounterScan:missing-record-data");
             setIsVerifyingCounterScan(false);
             return;
           }
@@ -426,9 +461,16 @@ export default function MemberProfile() {
 
           if (!Number.isInteger(counter) || counter < 0) {
             setTagMessage("Counter mirror (cnt) not found or invalid on tag payload.");
+            addDebugLog("verifyCounterScan:invalid-counter", { payloadUrl, counterRaw });
             setIsVerifyingCounterScan(false);
             return;
           }
+
+          addDebugLog("verifyCounterScan:payload-parsed", {
+            serialNumber: event.serialNumber,
+            counter,
+            payloadUrl,
+          });
 
           const response = await fetch("/api/member/tag/scan", {
             method: "POST",
@@ -443,15 +485,18 @@ export default function MemberProfile() {
 
           if (!response.ok && response.status !== 409) {
             setTagMessage(result?.error || "Counter scan verification failed.");
+            addDebugLog("verifyCounterScan:api-error", { status: response.status, result });
             setIsVerifyingCounterScan(false);
             return;
           }
 
           setLastScanResult(result as ScanVerificationResult);
           setTagMessage(result?.message || "Scan verified.");
+          addDebugLog("verifyCounterScan:api-success", { status: response.status, result });
           await loadTagStatus();
         } catch {
           setTagMessage("Unable to process scanned payload.");
+          addDebugLog("verifyCounterScan:processing-error");
         } finally {
           setIsVerifyingCounterScan(false);
         }
@@ -459,13 +504,15 @@ export default function MemberProfile() {
 
       ndef.onreadingerror = () => {
         setTagMessage("Tag read error. Please tap again.");
+        addDebugLog("verifyCounterScan:read-error");
         setIsVerifyingCounterScan(false);
       };
     } catch {
       setTagMessage("Unable to start NFC scan verification. Allow NFC permission and try again.");
+      addDebugLog("verifyCounterScan:scan-start-error");
       setIsVerifyingCounterScan(false);
     }
-  }, [loadTagStatus]);
+  }, [addDebugLog, loadTagStatus]);
 
   useEffect(() => {
     if (!user) {
@@ -1041,6 +1088,30 @@ export default function MemberProfile() {
                   </div>
 
                   {tagMessage ? <p className="text-xs text-[#64748b]">{tagMessage}</p> : null}
+
+                  <div className="pt-2 border-t border-[#e2e8f0] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-[#64748b] uppercase tracking-wide">Debug Logs (temporary)</label>
+                      <button
+                        type="button"
+                        className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-2 py-1 rounded-md"
+                        onClick={() => setDebugLogs([])}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <div className="max-h-40 overflow-auto border border-[#e2e8f0] rounded p-2 bg-[#f8fafc] text-xs text-[#334155]">
+                      {debugLogs.length === 0 ? (
+                        <p>No logs yet.</p>
+                      ) : (
+                        <ul className="space-y-1">
+                          {debugLogs.map((line, index) => (
+                            <li key={`${line}-${index}`} className="break-words">{line}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
                 </div>
             </div>
 
