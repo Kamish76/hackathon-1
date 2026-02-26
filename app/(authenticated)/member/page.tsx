@@ -31,6 +31,21 @@ type ManifestRow = {
   direction: "IN" | "OUT" | "BOTH";
 };
 
+const normalizePersonTypeLabel = (personType?: string | null) => {
+  const normalized = (personType || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (normalized === "staff") return "Staff";
+  if (normalized === "student") return "Student";
+  if (normalized === "visitor") return "Visitor";
+  if (normalized === "special guest") return "Special Guest";
+
+  return "Student";
+};
+
 const createDefaultProfileImage = (name?: string) => {
   const initial = (name?.trim()?.charAt(0) || "M").toUpperCase();
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-size="96" fill="#0f172a">${initial}</text></svg>`;
@@ -70,6 +85,7 @@ export default function MemberProfile() {
   });
 
   const [personRegistryId, setPersonRegistryId] = useState<string | null>(null);
+  const [personTypeLabel, setPersonTypeLabel] = useState("Student");
   const [vehicleInfo, setVehicleInfo] = useState({ makeModel: "", plate: "", permit: "N/A" });
   const [announcements, setAnnouncements] = useState<string[]>([]);
   const [stats, setStats] = useState({ entriesThisWeek: 0, mostUsedGate: "N/A" });
@@ -79,6 +95,8 @@ export default function MemberProfile() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+
+  const isVehicleTabDisabled = personTypeLabel === "Visitor" || personTypeLabel === "Special Guest";
 
   const getProfileImagePath = (userId: string) => `${userId}/avatar`;
 
@@ -243,13 +261,27 @@ export default function MemberProfile() {
         return;
       }
 
-      const { data: person } = await supabase
+      const { data: primaryPerson } = await supabase
         .from("person_registry")
         .select("id, person_type, full_name, email, external_identifier, linked_user_id, is_active, birth_date, emergency_contact_name, emergency_contact_phone, emergency_contacts, remarks")
         .or(`linked_user_id.eq.${user.id},email.eq.${user.email}`)
         .eq("is_active", true)
         .limit(1)
         .maybeSingle();
+
+      let person = primaryPerson;
+
+      if (!person && user.name) {
+        const { data: fallbackPerson } = await supabase
+          .from("person_registry")
+          .select("id, person_type, full_name, email, external_identifier, linked_user_id, is_active, birth_date, emergency_contact_name, emergency_contact_phone, emergency_contacts, remarks")
+          .eq("full_name", user.name)
+          .eq("is_active", true)
+          .limit(1)
+          .maybeSingle();
+
+        person = fallbackPerson;
+      }
 
       if (person) {
         setPersonRegistryId(person.id);
@@ -264,11 +296,9 @@ export default function MemberProfile() {
         setIdStatus({
           account: person.is_active ? "ACTIVE" : "INACTIVE",
           validThru: "N/A",
-          clearance:
-            (person.person_type || "").toLowerCase() === "staff"
-              ? "Staff"
-              : "Student",
+          clearance: normalizePersonTypeLabel(person.person_type),
         });
+        setPersonTypeLabel(normalizePersonTypeLabel(person.person_type));
 
         setEmergencyInfo({
           name: person.emergency_contact_name || "",
@@ -380,6 +410,8 @@ export default function MemberProfile() {
         }
       } else {
         setPersonRegistryId(null);
+        setPersonTypeLabel("Student");
+        setIdStatus((prev) => ({ ...prev, clearance: "Student" }));
         setMemberData((prev) => ({ ...prev, name: user.name || user.email || "Member", contactNumber: user.email || "" }));
         setAnnouncements(["No active announcements available."]);
       }
@@ -609,11 +641,17 @@ export default function MemberProfile() {
             </div>
 
             {/* Vehicle Info card */}
-            <div className="bg-white rounded-2xl shadow-lg border border-[#e9eef6] p-6">
+            <div className={`rounded-2xl shadow-lg border p-6 ${isVehicleTabDisabled ? "bg-[#f1f5f9] border-[#dbe2ea] text-[#94a3b8]" : "bg-white border-[#e9eef6]"}`}>
               <h4 className="font-semibold text-[#1e293b] mb-2">Registered Vehicle</h4>
-              <p>{vehicleInfo.makeModel}</p>
-              <p><span className="font-semibold">Plate:</span> {vehicleInfo.plate}</p>
-              <p><span className="inline-block bg-green-100 text-green-800 px-2 py-1 rounded text-xs">Parking Permit: {vehicleInfo.permit}</span></p>
+              {isVehicleTabDisabled ? (
+                <p className="text-sm">Not available for {personTypeLabel}.</p>
+              ) : (
+                <>
+                  <p>{vehicleInfo.makeModel}</p>
+                  <p><span className="font-semibold">Plate:</span> {vehicleInfo.plate}</p>
+                  <p><span className="inline-block bg-green-100 text-green-800 px-2 py-1 rounded text-xs">Parking Permit: {vehicleInfo.permit}</span></p>
+                </>
+              )}
             </div>
 
             {/* Announcements - span full width */}
