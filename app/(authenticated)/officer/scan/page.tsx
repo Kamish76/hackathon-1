@@ -192,7 +192,7 @@ export default function ScanPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#f8f9fa]">
+    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
       <OfficerSidebar activePage="scan" />
       <main className="flex-1 overflow-auto">
         <div className="p-8">

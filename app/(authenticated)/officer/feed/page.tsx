@@ -64,7 +64,7 @@ export default function LiveFeedPage() {
   const todayDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   return (
-    <div className="flex min-h-screen bg-[#f8f9fa]">
+    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
       <OfficerSidebar activePage="feed" />
       <main className="flex-1 overflow-auto">
         <div className="p-8">
