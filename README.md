@@ -43,31 +43,42 @@ npm install @supabase/supabase-js @supabase/ssr
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-NEXT_PUBLIC_NFC_API_BASE_URL=...
-NFC_API_BASE_URL=... # optional server override
-NFC_API_KEY=...      # optional x-api-key sent to NFC API
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` is required for admin member management actions (deactivate and permanent account deletion). Keep it server-only and never expose it to client components.
 
-`NEXT_PUBLIC_NFC_API_BASE_URL` points to your separate NFC backend API deployment used for member tag registration/status actions.
+## NFC / Attendance Target Architecture (Current Goal)
 
-For full external API integration details, see `INTEGRATE_WITH_EXTERNAL_WEBAPP.md`.
+The project is now moving to the unified design in `NFC_TAG_WRITE_TO_SCAN_IMPLEMENTATION_REFERENCE.md`.
 
-## NFC Testing Mode (Temporary)
+Canonical direction:
 
-For current testing, this app allows scans to proceed even when the tag payload does not include `cnt` (counter mirror).
+- One identifier for both NFC and QR payloads: `tag_id` (UUID)
+- Two-phase tag programming flow only: `prepare` -> physical write -> `confirm`
+- Internal-only backend flow (no external NFC webapp dependency)
+- Canonical audit trail: `user_tag_pending`, `user_tag_writes`, `event_attendance`
 
-- Tag registration/linking still works (`set`, `replace`, `deactivate`).
-- UID-based scans and activity logging can still run.
-- Manual counter fallback may be used during testing.
+Phase 1 foundation implemented:
 
-Important limitation:
+- New migration: `supabase/migrations/06_unified_tag_and_attendance_foundation.sql`
+- New endpoints:
+	- `GET /api/user/tag/can-write`
+	- `POST /api/user/tag/prepare`
+	- `POST /api/user/tag/confirm`
+	- `GET /api/user/tag/history?limit=10`
+	- `GET /api/user/by-tag?tag_id={uuid}`
+	- `POST /api/attendance`
+	- `GET /api/attendance?event_id={uuid}`
 
-- Without a real mirrored `cnt` value from NTAG counter mirror configuration, anti-clone verification is not cryptographically reliable.
-- Treat this mode as development/testing only.
+Legacy routes are deprecated and now return `410 Gone`:
 
-When moving to production, configure tags with proper mirror settings and require real `cnt` values for scan verification.
+- `/api/member/tag`
+- `/api/member/tag/set`
+- `/api/member/tag/replace`
+- `/api/member/tag/deactivate`
+- `/api/member/tag/scan`
+
+Remaining implementation work is tracked as refactor steps to migrate UI flows and reports to the new canonical tables and endpoints.
 
 3. Use the initialized clients:
 

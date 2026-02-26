@@ -1,5 +1,13 @@
 # Integrate NFC API with a Separate Web App
 
+## Status: Legacy Reference
+
+This document is kept for historical context only.
+
+Current implementation direction is internal-only, using the unified `tag_id` architecture and two-phase write flow documented in `NFC_TAG_WRITE_TO_SCAN_IMPLEMENTATION_REFERENCE.md`.
+
+Use the new internal endpoints instead of external NFC webapp integration for active development.
+
 This project can call a separate NFC backend API for tag registration, scan verification, and tag lifecycle actions.
 
 ## 1) Deploy and configure the NFC backend API
