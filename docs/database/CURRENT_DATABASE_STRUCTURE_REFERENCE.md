@@ -6,6 +6,7 @@
 ## 1) Module Summary
 This schema adds an ingress/egress tracking module with:
 - Person registry (students, staff, visitors, special guests)
+- Authentication bridge table (links Supabase auth to person registry)
 - Gate and access device management
 - Vehicle sessions and passenger tracking
 - Immutable access events (IN/OUT)
@@ -254,6 +255,30 @@ Indexes:
 - `idx_override_logs_access_event_id`
 - `idx_override_logs_operator_user_id`
 
+---
+
+### 3.12 `public.auth_users`
+Purpose: Authentication bridge table linking Supabase auth.users to person_registry and school_operator_roles.
+
+Columns:
+- `id uuid PK FK -> auth.users(id) on delete cascade`
+- `person_id uuid unique FK -> public.person_registry(id) on delete cascade`
+- `email text not null unique`
+- `role_id uuid null FK -> public.school_operator_roles(id)`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
+
+RLS Policies:
+- `Authenticated users can read auth_users` - All authenticated users can read any record (FOR SELECT TO authenticated USING (true))
+- `Users can update their own auth record` - Users can update only their own record (FOR UPDATE USING (auth.uid() = id))
+- No direct INSERT policy (uses SECURITY DEFINER function `create_auth_users_record`)
+
+OAuth Flow:
+- When new Google OAuth users sign in, the callback route (`/auth/callback`) checks if they exist in auth_users
+- If not found, they're redirected to `/auth/registration?oauth=true` to complete their profile
+- On profile completion, `completeOAuthProfile()` creates person_registry and auth_users records
+- The RLS policy allows authenticated users to query auth_users for verification purposes
+
 ## 4) Optional User Foreign-Key Compatibility Layer
 To avoid dependency on a specific auth schema, user FK constraints are added conditionally:
 - Uses `public.users` if present
@@ -275,12 +300,28 @@ Conditional FKs (constraint names):
 ## 5) Functions
 - `public.update_updated_at_column()`
   - Trigger helper that sets `NEW.updated_at = NOW()`
+- `public.update_auth_users_updated_at()`
+  - Trigger helper for auth_users table that sets `NEW.updated_at = NOW()`
 - `public.has_school_operator_role(p_user_id uuid, p_role text)`
   - Returns whether user has active operator role
   - `Taker` includes both `Taker` and `Admin`
 - `public.prevent_duplicate_direction()`
   - Anti-passback trigger guard for `access_events`
   - Prevents consecutive identical directions unless manual override
+- `public.create_person_registry_record(user_full_name text, user_email text, user_person_type text)`
+  - SECURITY DEFINER function to create person_registry records during signup
+  - Bypasses RLS policies to allow new user registration
+  - Returns UUID of newly created person record
+- `public.create_auth_users_record(user_id uuid, person_uuid uuid, user_email text, user_role_id uuid)`
+  - SECURITY DEFINER function to create auth_users bridge records
+  - Bypasses RLS policies and verifies user exists in auth.users
+  - Links authenticated users to person_registry and school_operator_roles
+- `public.get_person_full_name(user_id uuid)`
+  - SECURITY DEFINER function to fetch person_registry full_name by user_id
+  - Bypasses RLS policies for safe data retrieval during OAuth flow
+  - Queries through auth_users bridge to find associated person_registry record
+  - Returns TEXT (full_name) or NULL if user not found in auth_users
+  - Used in AuthContext to display registered full_name instead of OAuth provider name
 
 ## 6) Triggers
 `BEFORE UPDATE` (maintain `updated_at`):
@@ -292,6 +333,7 @@ Conditional FKs (constraint names):
 - `trg_vehicle_sessions_updated_at`
 - `trg_access_events_updated_at`
 - `trg_manifests_updated_at`
+- `update_auth_users_updated_at` on `public.auth_users`
 
 `BEFORE INSERT`:
 - `trg_prevent_duplicate_direction` on `public.access_events`
@@ -315,6 +357,7 @@ RLS is enabled on:
 - `manifests`
 - `manifest_entries`
 - `override_logs`
+- `auth_users`
 
 Policy pattern summary:
 - Taker role: read/insert operational records

@@ -1,14 +1,26 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Shield, Mail, Lock, AlertCircle, Eye, EyeOff, User, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function RegistrationPage() {
+  const searchParams = useSearchParams();
+  const isOAuthMode = searchParams.get('oauth') === 'true';
+  const prefilledEmail = searchParams.get('email') || '';
+  
+  useEffect(() => {
+    console.log('🔵 Registration Page Loaded');
+    console.log('OAuth Mode:', isOAuthMode);
+    console.log('Prefilled Email:', prefilledEmail);
+    console.log('Search Params:', searchParams.toString());
+  }, [isOAuthMode, prefilledEmail, searchParams]);
+  
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
-    email: '',
+    email: prefilledEmail,
     password: '',
     confirmPassword: '',
     role: 'Student',
@@ -18,6 +30,7 @@ export default function RegistrationPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const { signup, completeOAuthProfile } = useAuth();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -31,42 +44,84 @@ export default function RegistrationPage() {
     e.preventDefault();
     setError('');
 
+    console.log('🔵 Registration form submitted with data:', {
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      email: formData.email,
+      role: formData.role,
+      isOAuthMode,
+    });
+
     // Validation
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
       setError('First name and last name are required');
+      console.error('❌ Validation failed: Missing name');
       return;
     }
 
-    if (!formData.email.trim()) {
-      setError('Email is required');
-      return;
+    if (!isOAuthMode) {
+      // Regular signup validation
+      if (!formData.email.trim()) {
+        setError('Email is required');
+        console.error('❌ Validation failed: Missing email');
+        return;
+      }
+
+      if (!formData.password) {
+        setError('Password is required');
+        console.error('❌ Validation failed: Missing password');
+        return;
+      }
+
+      if (formData.password.length < 6) {
+        setError('Password must be at least 6 characters');
+        console.error('❌ Validation failed: Password too short');
+        return;
+      }
+
+      if (formData.password !== formData.confirmPassword) {
+        setError('Passwords do not match');
+        console.error('❌ Validation failed: Passwords do not match');
+        return;
+      }
     }
 
-    if (!formData.password) {
-      setError('Password is required');
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
+    console.log('✅ Validation passed, calling signup function...');
     setIsLoading(true);
 
     try {
-      // Simulate registration - in a real app, this would call an API
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      let success;
       
-      // For now, just redirect to login
-      router.push('/auth/login');
-    } catch {
-      setError('An error occurred during registration. Please try again.');
+      if (isOAuthMode) {
+        // OAuth completion - only need name and role
+        console.log('OAuth mode: completing profile...');
+        success = await completeOAuthProfile(
+          formData.firstName,
+          formData.lastName,
+          formData.role
+        );
+      } else {
+        // Regular signup
+        console.log('Regular mode: creating new account...');
+        success = await signup(
+          formData.email,
+          formData.password,
+          formData.firstName,
+          formData.lastName,
+          formData.role
+        );
+      }
+
+      if (success) {
+        console.log('✅ Registration successful, redirecting...');
+        router.push(isOAuthMode ? '/dashboard' : '/auth/login?registered=true');
+      } else {
+        console.error('❌ Registration failed: function returned false');
+        setError('Registration failed. Please check the console for details and try again.');
+      }
+    } catch (err) {
+      console.error('❌ Registration failed with exception:', err);
+      setError('An error occurred during registration. Please check the console and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -150,6 +205,16 @@ export default function RegistrationPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-5">
+              {isOAuthMode && (
+                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-blue-800 font-medium">Complete Your Profile</p>
+                    <p className="text-sm text-blue-700">You signed in with Google. Please complete your profile information.</p>
+                  </div>
+                </div>
+              )}
+
               {/* Name Fields */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -190,25 +255,27 @@ export default function RegistrationPage() {
                 </div>
               </div>
 
-              {/* Email Input */}
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-[#0f172a] mb-2">
-                  Email Address
-                </label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#64748b]" />
-                  <input
-                    id="email"
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-4 py-2.5 border border-[#e2e8f0] rounded-lg text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#1e293b] focus:ring-2 focus:ring-[#1e293b]/10 transition-colors"
-                    placeholder="john.doe@school.edu"
-                    required
-                  />
+              {/* Email Input - Hidden in OAuth mode */}
+              {!isOAuthMode && (
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-[#0f172a] mb-2">
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#64748b]" />
+                    <input
+                      id="email"
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleChange}
+                      className="w-full pl-10 pr-4 py-2.5 border border-[#e2e8f0] rounded-lg text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#1e293b] focus:ring-2 focus:ring-[#1e293b]/10 transition-colors"
+                      placeholder="john.doe@school.edu"
+                      required
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Role Selection */}
               <div>
@@ -229,60 +296,65 @@ export default function RegistrationPage() {
                 </select>
               </div>
 
-              {/* Password Input */}
-              <div>
-                <label htmlFor="password" className="block text-sm font-medium text-[#0f172a] mb-2">
-                  Password
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#64748b]" />
-                  <input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-12 py-2.5 border border-[#e2e8f0] rounded-lg text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#1e293b] focus:ring-2 focus:ring-[#1e293b]/10 transition-colors"
-                    placeholder="Enter a strong password"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#64748b] hover:text-[#0f172a] transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-                <p className="text-xs text-[#64748b] mt-1">At least 6 characters</p>
-              </div>
+              {/* Password fields - Hidden in OAuth mode */}
+              {!isOAuthMode && (
+                <>
+                  {/* Password Input */}
+                  <div>
+                    <label htmlFor="password" className="block text-sm font-medium text-[#0f172a] mb-2">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#64748b]" />
+                      <input
+                        id="password"
+                        type={showPassword ? 'text' : 'password'}
+                        name="password"
+                        value={formData.password}
+                        onChange={handleChange}
+                        className="w-full pl-10 pr-12 py-2.5 border border-[#e2e8f0] rounded-lg text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#1e293b] focus:ring-2 focus:ring-[#1e293b]/10 transition-colors"
+                        placeholder="Enter a strong password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#64748b] hover:text-[#0f172a] transition-colors"
+                      >
+                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-[#64748b] mt-1">At least 6 characters</p>
+                  </div>
 
-              {/* Confirm Password Input */}
-              <div>
-                <label htmlFor="confirmPassword" className="block text-sm font-medium text-[#0f172a] mb-2">
-                  Confirm Password
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#64748b]" />
-                  <input
-                    id="confirmPassword"
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-12 py-2.5 border border-[#e2e8f0] rounded-lg text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#1e293b] focus:ring-2 focus:ring-[#1e293b]/10 transition-colors"
-                    placeholder="Confirm your password"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#64748b] hover:text-[#0f172a] transition-colors"
-                  >
-                    {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
+                  {/* Confirm Password Input */}
+                  <div>
+                    <label htmlFor="confirmPassword" className="block text-sm font-medium text-[#0f172a] mb-2">
+                      Confirm Password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#64748b]" />
+                      <input
+                        id="confirmPassword"
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        name="confirmPassword"
+                        value={formData.confirmPassword}
+                        onChange={handleChange}
+                        className="w-full pl-10 pr-12 py-2.5 border border-[#e2e8f0] rounded-lg text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#1e293b] focus:ring-2 focus:ring-[#1e293b]/10 transition-colors"
+                        placeholder="Confirm your password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#64748b] hover:text-[#0f172a] transition-colors"
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Terms Agreement */}
               <label className="flex items-start gap-3 cursor-pointer">
@@ -305,10 +377,10 @@ export default function RegistrationPage() {
                 {isLoading ? (
                   <span className="flex items-center justify-center gap-2">
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    Creating account...
+                    {isOAuthMode ? 'Completing profile...' : 'Creating account...'}
                   </span>
                 ) : (
-                  'Create Account'
+                  isOAuthMode ? 'Complete Profile' : 'Create Account'
                 )}
               </button>
             </form>
