@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Shield, Mail, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -11,8 +11,10 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const router = useRouter();
-  const { login, user } = useAuth();
+  const searchParams = useSearchParams();
+  const { login, loginWithGoogle, user } = useAuth();
 
   // Redirect if already logged in
   useEffect(() => {
@@ -20,6 +22,12 @@ export default function LoginPage() {
       router.push('/dashboard');
     }
   }, [user, router]);
+
+  useEffect(() => {
+    if (searchParams.get('error') === 'oauth_failed') {
+      setError('Google authentication failed. Please try again.');
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,6 +45,17 @@ export default function LoginPage() {
       setError('An error occurred. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setIsGoogleLoading(true);
+
+    const success = await loginWithGoogle();
+    if (!success) {
+      setError('Unable to start Google sign in. Please try again.');
+      setIsGoogleLoading(false);
     }
   };
 
@@ -180,7 +199,7 @@ export default function LoginPage() {
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || isGoogleLoading}
                 className="w-full py-2.5 bg-[#1e293b] text-white rounded-lg font-medium hover:bg-[#334155] focus:outline-none focus:ring-2 focus:ring-[#1e293b] focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
@@ -191,6 +210,21 @@ export default function LoginPage() {
                 ) : (
                   'Sign in'
                 )}
+              </button>
+
+              <div className="flex items-center gap-3 text-xs text-[#94a3b8]">
+                <div className="h-px flex-1 bg-[#e2e8f0]" />
+                <span>OR</span>
+                <div className="h-px flex-1 bg-[#e2e8f0]" />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                disabled={isGoogleLoading || isLoading}
+                className="w-full py-2.5 border border-[#e2e8f0] text-[#0f172a] rounded-lg font-medium hover:bg-[#f8f9fa] focus:outline-none focus:ring-2 focus:ring-[#1e293b] focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isGoogleLoading ? 'Redirecting to Google...' : 'Continue with Google'}
               </button>
             </form>
 
