@@ -1,18 +1,33 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
 import { FlaskConical, RefreshCw } from 'lucide-react';
 
 export default function TestQRPage() {
   const { user } = useAuth();
-  const defaultValue = user?.id ? `REFERENCE_ID:${user.id}` : '';
+  const [personId, setPersonId] = useState<string | null>(null);
   const [customId, setCustomId] = useState('');
+
+  // Resolve person_registry.id from auth_users bridge
+  useEffect(() => {
+    if (!user?.id) return;
+    const supabase = createClient();
+    supabase
+      .from('auth_users')
+      .select('person_uuid')
+      .eq('user_id', user.id)
+      .single()
+      .then(({ data }: { data: { person_uuid: string } | null }) => {
+        if (data?.person_uuid) setPersonId(data.person_uuid);
+      });
+  }, [user?.id]);
 
   const qrValue = customId.trim()
     ? `REFERENCE_ID:${customId.trim()}`
-    : defaultValue;
+    : personId ? `REFERENCE_ID:${personId}` : '';
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] flex flex-col items-center justify-center p-8 gap-6">
@@ -33,7 +48,7 @@ export default function TestQRPage() {
           {qrValue ? (
             <QRCodeSVG value={qrValue} size={200} level="H" fgColor="#0f172a" bgColor="#ffffff" />
           ) : (
-            <div className="w-[200px] h-[200px] flex items-center justify-center text-sm text-[#94a3b8]">
+            <div className="w-50 h-50 flex items-center justify-center text-sm text-[#94a3b8]">
               Loading…
             </div>
           )}
@@ -48,7 +63,11 @@ export default function TestQRPage() {
         {user && !customId && (
           <div className="text-center">
             <p className="text-sm font-medium text-[#0f172a]">{user.name}</p>
-            <p className="text-xs text-[#64748b]">{user.role} • {user.id}</p>
+            <p className="text-xs text-[#64748b]">{user.role}</p>
+            {personId
+              ? <p className="text-xs text-[#94a3b8] font-mono mt-0.5">person id: {personId}</p>
+              : <p className="text-xs text-[#ef4444] mt-0.5">No person_registry record found for this account</p>
+            }
           </div>
         )}
 
@@ -62,7 +81,7 @@ export default function TestQRPage() {
           </label>
           <input
             type="text"
-            placeholder="Paste any user UUID…"
+            placeholder="Paste any person_registry UUID…"
             value={customId}
             onChange={(e) => setCustomId(e.target.value)}
             className="w-full px-3 py-2 text-sm border border-[#e2e8f0] rounded-lg text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#1e293b] focus:ring-1 focus:ring-[#1e293b]"

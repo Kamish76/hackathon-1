@@ -66,54 +66,28 @@ export default function ScanPage() {
 
     const refId = text.slice(PREFIX.length).trim();
 
+    // QR encodes person_registry.id — query it directly
     const supabase = createClient();
-    const { data, error } = await supabase
+    const { data: person, error } = await supabase
       .from('person_registry')
       .select('full_name, person_type')
-      .eq('linked_user_id', refId)
+      .eq('id', refId)
       .single();
 
-    if (error || !data) {
-      // Try matching by id directly (some QRs may encode person id)
-      const { data: byId, error: idErr } = await supabase
-        .from('person_registry')
-        .select('full_name, person_type')
-        .eq('id', refId)
-        .single();
-
-      if (idErr || !byId) {
-        setErrorMsg('Person not found in the registry.');
-        setScanStatus('error');
-        timerRef.current = setTimeout(resetToScanning, 2500);
-        return;
-      }
-
-      const result: LastResult = { name: byId.full_name, type: byId.person_type, refId };
-      setLastResult(result);
-      setRecentScans((prev) => [
-        {
-          id: crypto.randomUUID(),
-          name: byId.full_name,
-          type: byId.person_type,
-          direction: 'IN',
-          gate: 'Main Gate',
-          time: timeAgo(new Date()),
-          status: 'granted',
-        },
-        ...prev,
-      ]);
-      setScanStatus('success');
-      timerRef.current = setTimeout(resetToScanning, 3000);
+    if (error || !person) {
+      setErrorMsg('Person not found in the registry.');
+      setScanStatus('error');
+      timerRef.current = setTimeout(resetToScanning, 2500);
       return;
     }
 
-    const result: LastResult = { name: data.full_name, type: data.person_type, refId };
+    const result: LastResult = { name: person.full_name, type: person.person_type, refId };
     setLastResult(result);
     setRecentScans((prev) => [
       {
         id: crypto.randomUUID(),
-        name: data.full_name,
-        type: data.person_type,
+        name: person.full_name,
+        type: person.person_type,
         direction: 'IN',
         gate: 'Main Gate',
         time: timeAgo(new Date()),
@@ -245,6 +219,13 @@ export default function ScanPage() {
                     {scanStatus === 'scanning' ? 'Stop Scanner' : 'Start Scanner'}
                   </button>
                 )}
+
+                <a
+                  href="/officer/test-qr"
+                  className="text-xs text-[#94a3b8] hover:text-[#64748b] underline underline-offset-2 text-center transition-colors"
+                >
+                  Generate a test QR →
+                </a>
               </div>
             ) : (
               /* NFC Tab */
