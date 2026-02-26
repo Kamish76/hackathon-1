@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Search, Plus, Filter, X } from 'lucide-react';
+import { Search, Plus, Filter, X, Shield, BarChart3, Users, Activity, Settings, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Person {
@@ -60,40 +60,30 @@ export default function PeopleRegistry() {
       <aside className="w-64 bg-white border-r border-[#e2e8f0] flex flex-col">
         <div className="p-6 border-b border-[#e2e8f0]">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#1e293b] flex items-center justify-center text-white text-sm font-bold">
-              NFC
-            </div>
+            <Shield className="w-8 h-8 text-[#1e293b]" />
             <div>
               <h1 className="text-lg font-semibold text-[#0f172a]">NFC Access</h1>
               <p className="text-xs text-[#64748b]">Admin Portal</p>
             </div>
           </div>
         </div>
-
+        
         <nav className="flex-1 p-4">
           <div className="space-y-1">
             <a href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9m-9 11l4-4m0 0l4 4m-4-4V6" />
-              </svg>
+              <BarChart3 className="w-5 h-5" />
               Dashboard
             </a>
             <a href="/people" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#f1f5f9] text-[#1e293b] font-medium">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 12H9m6 0a6 6 0 11-12 0 6 6 0 0112 0z" />
-              </svg>
+              <Users className="w-5 h-5" />
               People
             </a>
             <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
+              <Activity className="w-5 h-5" />
               Access Events
             </a>
             <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
+              <Settings className="w-5 h-5" />
               Settings
             </a>
           </div>
@@ -108,6 +98,7 @@ export default function PeopleRegistry() {
               <p className="text-sm font-medium text-[#0f172a]">John Doe</p>
               <p className="text-xs text-[#64748b]">Administrator</p>
             </div>
+            <LogOut className="w-4 h-4 text-[#64748b] cursor-pointer hover:text-[#ef4444]" />
           </div>
         </div>
       </aside>
