@@ -22,8 +22,11 @@ export default function GuestRoute({ children }: { children: React.ReactNode }) 
       if (user.role === 'Admin') {
         console.log('[GuestRoute] Admin user detected; redirecting to /admin/dashboard');
         router.push('/admin/dashboard');
+      } else if (user.role === 'Officer') {
+        console.log('[GuestRoute] Officer user detected; redirecting to /officer');
+        router.push('/officer');
       } else {
-        console.log('[GuestRoute] Non-admin user detected; redirecting to /member');
+        console.log('[GuestRoute] Member user detected; redirecting to /member');
         router.push('/member');
       }
     }

@@ -1,7 +1,8 @@
 # Current Database Structure Reference
 
 **Source of truth:** `docs/SCHOOL_INGRESS_EGRESS_INIT.sql`  
-**Last Updated:** 2026-02-26
+**Last Updated:** 2026-02-26  
+**Applied Migrations:** 01, 02, 03, 04
 
 ## 1) Module Summary
 This schema adds an ingress/egress tracking module with:
@@ -49,7 +50,7 @@ Purpose: Operator RBAC assignments.
 Columns:
 - `id uuid PK`
 - `user_id uuid not null unique`
-- `operator_role text not null check in ('Admin','Taker')`
+- `operator_role text not null check in ('Admin','Officer')` *(was `'Taker'` before migration 03)*
 - `is_active boolean not null default true`
 - `assigned_by uuid null`
 - `assigned_at timestamptz not null default now()`
@@ -303,8 +304,10 @@ Conditional FKs (constraint names):
 - `public.update_auth_users_updated_at()`
   - Trigger helper for auth_users table that sets `NEW.updated_at = NOW()`
 - `public.has_school_operator_role(p_user_id uuid, p_role text)`
-  - Returns whether user has active operator role
-  - `Taker` includes both `Taker` and `Admin`
+  - Returns whether user has active operator role (SECURITY DEFINER, bypasses RLS)
+  - `Officer` check matches `operator_role IN ('Officer', 'Taker', 'Admin')` — `'Taker'` retained for backward compatibility with pre-migration 03 rows
+  - `Admin` check matches `operator_role = 'Admin'` only
+  - Updated by migration 02 (fix RLS recursion), migration 03 (add Officer), migration 04 (add Taker compat)
 - `public.prevent_duplicate_direction()`
   - Anti-passback trigger guard for `access_events`
   - Prevents consecutive identical directions unless manual override
@@ -369,7 +372,16 @@ Default gates inserted idempotently:
 - `GATE-01` Main Gate (pedestrian)
 - `GATE-02` Vehicle Gate (vehicle lane)
 
-## 10) Operational Notes
+## 10) Migration Changelog
+
+| # | File | Description |
+|---|------|-------------|
+| 01 | `01_create_users_table.sql` | Creates `auth_users` bridge table, RLS policies, and SECURITY DEFINER helper functions (`create_person_registry_record`, `create_auth_users_record`). |
+| 02 | `02_fix_school_operator_roles_rls_recursion.sql` | Replaces `has_school_operator_role` with a version that avoids infinite RLS recursion by using `SECURITY DEFINER`. Initially authored for `'Taker'`; updated by migration 03. |
+| 03 | `03_rename_taker_to_officer.sql` | Drops all check constraints on `school_operator_roles` dynamically, renames existing `operator_role = 'Taker'` rows to `'Officer'`, re-adds constraint as `CHECK (operator_role IN ('Admin', 'Officer'))`, and recreates `has_school_operator_role` for the new value. |
+| 04 | `04_fix_officer_rpc_taker_compat.sql` | Patches `has_school_operator_role` so the `Officer` role check also matches legacy `'Taker'` rows (backward compatibility for accounts not yet migrated by 03). Safe to run multiple times. |
+
+## 11) Operational Notes
 - Script is additive and designed to be idempotent.
 - Existing attendance schema is not dropped/replaced.
 - Visitors/Special Guests remain in `person_registry` and do not require direct app user accounts.

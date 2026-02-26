@@ -13,8 +13,9 @@ export default function AdminRoute({ children }: { children: React.ReactNode }) 
       console.log('[AdminRoute] No user; redirecting to /auth/login');
       router.push('/auth/login');
     } else if (!isLoading && user && user.role !== 'Admin') {
-      console.log('[AdminRoute] Non-admin user; redirecting to /member');
-      router.push('/member');
+      const dest = user.role === 'Officer' ? '/officer' : '/member';
+      console.log(`[AdminRoute] Non-admin user; redirecting to ${dest}`);
+      router.push(dest);
     }
   }, [user, isLoading, router]);
 
