@@ -11,39 +11,23 @@ type GateOption = {
 
 type OfficerScanResult = {
   verdict?: "allowed" | "blocked";
-  testing_mode?: boolean;
-  scan?: {
-    status: "first_scan" | "valid" | "skipped_scans" | "clone_detected" | "cnt_missing_testing_mode";
-    message: string;
-    expected_counter?: number;
-    received_counter?: number;
-    scan_count?: number;
-    uid: string;
-  };
-  gate?: {
-    id: string;
-    gate_code: string;
-    gate_name: string;
-  };
-  person?: {
+  event_id?: string;
+  user?: {
     id: string;
     full_name: string;
-    person_type: string;
-    member_code: string | null;
-    nfc_tag_status: string;
+    email: string | null;
+    tag_id: string;
   };
-  account?: {
-    is_linked: boolean;
-    auth_user_id: string | null;
-  };
-  access_event?: {
+  attendance?: {
     id: string;
-    gate_id: string;
-    direction: "IN" | "OUT";
-    event_timestamp: string;
+    marked_at: string;
+    is_member: boolean;
   };
   error?: string;
 };
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type NdefRecord = {
   data?: BufferSource;
@@ -108,8 +92,6 @@ export default function OfficerScanPage() {
   const [logs, setLogs] = useState<string[]>([]);
 
   const [manualUid, setManualUid] = useState("");
-  const [manualCounter, setManualCounter] = useState("");
-  const [manualMemberCode, setManualMemberCode] = useState("");
 
   const [lastResult, setLastResult] = useState<OfficerScanResult | null>(null);
 
@@ -123,7 +105,7 @@ export default function OfficerScanPage() {
   }, []);
 
   const submitScan = useCallback(
-    async (params: { uid: string; counter?: number; memberCode?: string | null; payload?: string | null }) => {
+    async (params: { tagId: string; scanMethod: "NFC" | "QR" | "Manual" }) => {
       if (!gateId) {
         setMessage("Select a gate before scanning.");
         return;
@@ -137,16 +119,15 @@ export default function OfficerScanPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          uid: params.uid,
-          counter: params.counter,
-          member_code: params.memberCode || undefined,
-          gate_id: gateId,
+          tag_id: params.tagId,
+          event_id: gateId,
+          scan_method: params.scanMethod,
         }),
       });
 
       const result = (await response.json()) as OfficerScanResult;
 
-      if (!response.ok && response.status !== 409) {
+      if (!response.ok) {
         setLastResult(result);
         setMessage(result.error || "Scan verification failed.");
         addLog("submitScan:error", { status: response.status, result });
@@ -155,13 +136,7 @@ export default function OfficerScanPage() {
       }
 
       setLastResult(result);
-      setMessage(
-        response.status === 409 || result.verdict === "blocked"
-          ? "Clone-detected scan logged as BLOCKED."
-          : result.testing_mode || result.scan?.status === "cnt_missing_testing_mode"
-            ? "Scan logged in testing mode (cnt missing)."
-            : "Scan verified and logged."
-      );
+      setMessage("Scan verified and attendance marked.");
       addLog("submitScan:success", { status: response.status, result });
       setIsSubmitting(false);
     },
@@ -191,42 +166,17 @@ export default function OfficerScanPage() {
       await ndef.scan();
 
       ndef.onreading = (event) => {
-        const uid = event.serialNumber?.trim();
         const firstRecord = event.message?.records?.[0];
-        const payload = decodeRecordPayload(firstRecord);
+        const payload = decodeRecordPayload(firstRecord)?.trim().toLowerCase() || "";
 
-        let counter = Number.NaN;
-        let memberCode: string | null = null;
-
-        if (payload) {
-          try {
-            const parsed = new URL(payload);
-            counter = Number(parsed.searchParams.get("cnt"));
-            memberCode = parsed.searchParams.get("code");
-          } catch {
-            addLog("startNfcScan:payload-not-url", { payload });
-          }
-        }
-
-        if (!uid) {
-          setMessage("No NFC UID detected. Try another tap.");
-          addLog("startNfcScan:no-uid", { payload });
+        if (!payload || !uuidPattern.test(payload)) {
+          setMessage("Scanned tag payload is invalid. Expected UUID tag_id in NDEF text record.");
+          addLog("startNfcScan:invalid-tag-id", { payload, serialNumber: event.serialNumber });
           setIsScanning(false);
           return;
         }
 
-        if (!Number.isInteger(counter) || counter < 0) {
-          const manual = Number(manualCounter);
-          if (Number.isInteger(manual) && manual >= 0) {
-            addLog("startNfcScan:manual-counter-fallback", { uid, counter: manual });
-            void submitScan({ uid, counter: manual, memberCode, payload });
-          } else {
-            addLog("startNfcScan:counter-missing-testing-mode", { uid, payload });
-            void submitScan({ uid, memberCode, payload });
-          }
-        } else {
-          void submitScan({ uid, counter, memberCode, payload });
-        }
+        void submitScan({ tagId: payload, scanMethod: "NFC" });
 
         setIsScanning(false);
       };
@@ -241,25 +191,23 @@ export default function OfficerScanPage() {
       addLog("startNfcScan:scan-start-error");
       setIsScanning(false);
     }
-  }, [addLog, gateId, manualCounter, submitScan]);
+  }, [addLog, gateId, submitScan]);
 
   const submitManualScan = useCallback(() => {
-    const uid = manualUid.trim();
-    const counterRaw = manualCounter.trim();
-    const counter = counterRaw === "" ? Number.NaN : Number(counterRaw);
+    const tagId = manualUid.trim().toLowerCase();
 
-    if (!uid) {
-      setMessage("Manual UID is required.");
+    if (!tagId) {
+      setMessage("Manual tag_id is required.");
       return;
     }
 
-    void submitScan({
-      uid,
-      counter: Number.isInteger(counter) && counter >= 0 ? counter : undefined,
-      memberCode: manualMemberCode.trim() || null,
-      payload: null,
-    });
-  }, [manualCounter, manualMemberCode, manualUid, submitScan]);
+    if (!uuidPattern.test(tagId)) {
+      setMessage("Manual tag_id must be a valid UUID.");
+      return;
+    }
+
+    void submitScan({ tagId, scanMethod: "Manual" });
+  }, [manualUid, submitScan]);
 
   useEffect(() => {
     const loadGates = async () => {
@@ -292,7 +240,7 @@ export default function OfficerScanPage() {
         <div className="p-8 space-y-6">
           <div>
             <h2 className="text-3xl font-bold text-[#0f172a] mb-2">Scan / Check-in</h2>
-            <p className="text-[#64748b]">Scan a tag to verify status, account link, and write access logs. Missing cnt is allowed in testing mode.</p>
+            <p className="text-[#64748b]">Scan a tag to resolve `tag_id` and mark attendance.</p>
           </div>
 
           <section className="bg-white rounded-xl border border-[#e2e8f0] p-6 shadow-sm space-y-4">
@@ -325,27 +273,12 @@ export default function OfficerScanPage() {
 
             <div className="pt-2 border-t border-[#e2e8f0]">
               <p className="text-sm font-medium text-[#1e293b] mb-2">Manual fallback</p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 md:max-w-md">
                 <input
                   type="text"
                   value={manualUid}
                   onChange={(event) => setManualUid(event.target.value)}
-                  placeholder="UID (e.g. 04:a1:b2:...)"
-                  className="border border-[#e2e8f0] rounded px-3 py-2 text-sm"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  value={manualCounter}
-                  onChange={(event) => setManualCounter(event.target.value)}
-                  placeholder="Counter (optional in testing mode)"
-                  className="border border-[#e2e8f0] rounded px-3 py-2 text-sm"
-                />
-                <input
-                  type="text"
-                  value={manualMemberCode}
-                  onChange={(event) => setManualMemberCode(event.target.value)}
-                  placeholder="Member code (optional)"
+                  placeholder="tag_id UUID"
                   className="border border-[#e2e8f0] rounded px-3 py-2 text-sm"
                 />
               </div>
@@ -374,13 +307,10 @@ export default function OfficerScanPage() {
             ) : (
               <>
                 <p className="text-sm text-[#1e293b]"><span className="font-semibold">Verdict:</span> {lastResult.verdict || "N/A"}</p>
-                <p className="text-sm text-[#1e293b]"><span className="font-semibold">Scan status:</span> {lastResult.scan?.status || "N/A"}</p>
-                <p className="text-sm text-[#1e293b]"><span className="font-semibold">Counter:</span> {lastResult.scan?.expected_counter ?? "-"} / {lastResult.scan?.received_counter ?? "-"}</p>
-                <p className="text-sm text-[#1e293b]"><span className="font-semibold">Testing mode:</span> {lastResult.testing_mode || lastResult.scan?.status === "cnt_missing_testing_mode" ? "Yes (cnt ignored)" : "No"}</p>
-                <p className="text-sm text-[#1e293b]"><span className="font-semibold">Person:</span> {lastResult.person?.full_name || "Unknown"}</p>
-                <p className="text-sm text-[#1e293b]"><span className="font-semibold">Account linked:</span> {lastResult.account?.is_linked ? "Yes" : "No"}</p>
-                <p className="text-sm text-[#1e293b]"><span className="font-semibold">Logged direction:</span> {lastResult.access_event?.direction || "N/A"}</p>
-                <p className="text-sm text-[#1e293b]"><span className="font-semibold">Logged at:</span> {lastResult.access_event?.event_timestamp ? new Date(lastResult.access_event.event_timestamp).toLocaleString() : "N/A"}</p>
+                <p className="text-sm text-[#1e293b]"><span className="font-semibold">Event:</span> {lastResult.event_id || "N/A"}</p>
+                <p className="text-sm text-[#1e293b]"><span className="font-semibold">Person:</span> {lastResult.user?.full_name || "Unknown"}</p>
+                <p className="text-sm text-[#1e293b]"><span className="font-semibold">Tag ID:</span> {lastResult.user?.tag_id || "N/A"}</p>
+                <p className="text-sm text-[#1e293b]"><span className="font-semibold">Marked at:</span> {lastResult.attendance?.marked_at ? new Date(lastResult.attendance.marked_at).toLocaleString() : "N/A"}</p>
                 {lastResult.error ? <p className="text-sm text-[#b91c1c]">{lastResult.error}</p> : null}
               </>
             )}
