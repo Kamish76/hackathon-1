@@ -145,11 +145,11 @@ export default async function AdminDashboardPage() {
               Dashboard
             </a>
             <a
-              href="/people"
+              href="/admin/members"
               className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors"
             >
               <Users className="w-5 h-5" />
-              People
+              Members
             </a>
             <a
               href="/events"
@@ -267,10 +267,10 @@ export default async function AdminDashboardPage() {
 
               <div className="space-y-3">
                 <a
-                  href="/people"
+                  href="/admin/members"
                   className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg bg-[#1e293b] text-white hover:bg-[#334155] transition-colors"
                 >
-                  <span className="text-sm font-medium">Manage Members / Students</span>
+                  <span className="text-sm font-medium">Manage Members</span>
                   <ArrowRight className="w-4 h-4" />
                 </a>
 
