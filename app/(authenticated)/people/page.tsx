@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Search, Plus, Filter, X, Shield, BarChart3, Users, Activity, Settings, LogOut } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Search, Plus, Filter, Shield, BarChart3, Users, Activity, Settings, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
 
 interface Person {
   id: string;
@@ -11,40 +12,63 @@ interface Person {
   type: 'Student' | 'Staff' | 'Visitor' | 'Special Guest';
   contact: string;
   nfcUid: string;
-  status: 'Active' | 'Inactive' | 'Expired';
+  status: 'Active' | 'Inactive';
 }
-
-// Mock data
-const mockPeople: Person[] = [
-  { id: '1', name: 'Sarah Johnson', type: 'Student', contact: 'sarah.j@school.edu', nfcUid: 'NFC-001', status: 'Active' },
-  { id: '2', name: 'Mike Chen', type: 'Staff', contact: 'mike.chen@school.edu', nfcUid: 'NFC-002', status: 'Active' },
-  { id: '3', name: 'Emily Davis', type: 'Visitor', contact: 'emily.davis@email.com', nfcUid: 'NFC-003', status: 'Active' },
-  { id: '4', name: 'Robert Williams', type: 'Student', contact: 'robert.w@school.edu', nfcUid: 'NFC-004', status: 'Active' },
-  { id: '5', name: 'Lisa Anderson', type: 'Special Guest', contact: 'lisa.anderson@company.com', nfcUid: 'NFC-005', status: 'Expired' },
-  { id: '6', name: 'James Taylor', type: 'Staff', contact: 'james.taylor@school.edu', nfcUid: 'NFC-006', status: 'Active' },
-  { id: '7', name: 'Michelle Brown', type: 'Student', contact: 'michelle.b@school.edu', nfcUid: 'NFC-007', status: 'Inactive' },
-  { id: '8', name: 'David Martinez', type: 'Visitor', contact: 'david.m@email.com', nfcUid: 'NFC-008', status: 'Active' },
-  { id: '9', name: 'Jessica Lee', type: 'Staff', contact: 'jessica.lee@school.edu', nfcUid: 'NFC-009', status: 'Active' },
-  { id: '10', name: 'Thomas Garcia', type: 'Student', contact: 'thomas.g@school.edu', nfcUid: 'NFC-010', status: 'Active' },
-];
 
 const personTypes = ['All', 'Student', 'Staff', 'Visitor', 'Special Guest'];
 
 const statusColors: Record<string, { bg: string; text: string }> = {
   Active: { bg: 'bg-green-100', text: 'text-green-800' },
   Inactive: { bg: 'bg-gray-100', text: 'text-gray-800' },
-  Expired: { bg: 'bg-red-100', text: 'text-red-800' },
 };
 
 function PeopleRegistryContent() {
   const { user, logout } = useAuth();
+  const supabase = createClient();
+
+  const [people, setPeople] = useState<Person[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('All');
   const [showTypeFilter, setShowTypeFilter] = useState(false);
 
+  useEffect(() => {
+    const fetchPeople = async () => {
+      setIsLoading(true);
+      setFetchError(null);
+
+      const { data, error } = await supabase
+        .from('person_registry')
+        .select('id, full_name, person_type, email, nfc_tag_id, is_active')
+        .order('full_name', { ascending: true });
+
+      if (error) {
+        console.error('[PeopleRegistry] Failed to fetch:', error);
+        setFetchError('Failed to load people. Please try again.');
+      } else {
+        setPeople(
+          (data ?? []).map((row) => ({
+            id: row.id,
+            name: row.full_name,
+            type: row.person_type as Person['type'],
+            contact: row.email ?? '—',
+            nfcUid: row.nfc_tag_id ?? '—',
+            status: row.is_active ? 'Active' : 'Inactive',
+          }))
+        );
+      }
+
+      setIsLoading(false);
+    };
+
+    void fetchPeople();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Filter and search logic
   const filteredPeople = useMemo(() => {
-    return mockPeople.filter((person) => {
+    return people.filter((person) => {
       const matchesSearch =
         person.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         person.contact.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -54,7 +78,7 @@ function PeopleRegistryContent() {
 
       return matchesSearch && matchesType;
     });
-  }, [searchQuery, selectedType]);
+  }, [people, searchQuery, selectedType]);
 
   return (
     <div className="flex min-h-screen bg-[#f8f9fa]">
@@ -173,9 +197,18 @@ function PeopleRegistryContent() {
           </div>
 
           {/* Results Summary */}
-          <div className="mb-4 text-sm text-[#64748b]">
-            Showing {filteredPeople.length} of {mockPeople.length} people
-          </div>
+          {!isLoading && !fetchError && (
+            <div className="mb-4 text-sm text-[#64748b]">
+              Showing {filteredPeople.length} of {people.length} people
+            </div>
+          )}
+
+          {/* Error */}
+          {fetchError && (
+            <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+              {fetchError}
+            </div>
+          )}
 
           {/* Table */}
           <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
@@ -192,7 +225,16 @@ function PeopleRegistryContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPeople.length > 0 ? (
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center">
+                        <div className="flex flex-col items-center justify-center gap-3">
+                          <div className="w-8 h-8 border-4 border-[#e2e8f0] border-t-[#1e293b] rounded-full animate-spin" />
+                          <p className="text-[#64748b] text-sm">Loading people...</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredPeople.length > 0 ? (
                     filteredPeople.map((person) => (
                       <tr key={person.id} className="border-b border-[#e2e8f0] hover:bg-[#f8f9fa] transition-colors">
                         <td className="px-6 py-4 text-sm font-medium text-[#0f172a]">{person.name}</td>
