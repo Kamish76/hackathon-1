@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Shield, Mail, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Shield, Mail, Lock, AlertCircle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginPage() {
@@ -10,33 +10,62 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const router = useRouter();
-  const { login, user } = useAuth();
+  const searchParams = useSearchParams();
+  const { login, loginWithGoogle } = useAuth();
 
-  // Redirect if already logged in
   useEffect(() => {
-    if (user) {
-      router.push('/dashboard');
+    if (searchParams.get('error') === 'oauth_failed') {
+      setError('Google authentication failed. Please try again.');
     }
-  }, [user, router]);
+    if (searchParams.get('registered') === 'true') {
+      setSuccessMessage('Registration successful! Please login with your credentials.');
+      console.log('✅ User redirected after successful registration');
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
+    console.log('🔵 Login form submitted with email:', email);
+
     try {
+      console.log('Calling login function...');
       const success = await login(email, password);
+      
       if (success) {
+        console.log('✅ Login successful, redirecting to dashboard...');
         router.push('/dashboard');
       } else {
+        console.error('❌ Login failed: login function returned false');
         setError('Invalid email or password');
       }
     } catch (err) {
+      console.error('❌ Login failed with exception:', err);
       setError('An error occurred. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setIsGoogleLoading(true);
+
+    console.log('🔵 Attempting Google sign-in...');
+    const success = await loginWithGoogle();
+    
+    if (!success) {
+      console.error('❌ Google sign-in failed');
+      setError('Unable to start Google sign in. Please try again.');
+      setIsGoogleLoading(false);
+    } else {
+      console.log('✅ Google sign-in initiated, redirecting...');
     }
   };
 
@@ -107,9 +136,19 @@ export default function LoginPage() {
               <p className="text-[#64748b]">Enter your credentials to access your account</p>
             </div>
 
+            {successMessage && (
+              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm text-green-800 font-medium">Success!</p>
+                  <p className="text-sm text-green-700">{successMessage}</p>
+                </div>
+              </div>
+            )}
+
             {error && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="text-sm text-red-800 font-medium">Authentication Failed</p>
                   <p className="text-sm text-red-700">{error}</p>
@@ -180,7 +219,7 @@ export default function LoginPage() {
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || isGoogleLoading}
                 className="w-full py-2.5 bg-[#1e293b] text-white rounded-lg font-medium hover:bg-[#334155] focus:outline-none focus:ring-2 focus:ring-[#1e293b] focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
@@ -191,6 +230,21 @@ export default function LoginPage() {
                 ) : (
                   'Sign in'
                 )}
+              </button>
+
+              <div className="flex items-center gap-3 text-xs text-[#94a3b8]">
+                <div className="h-px flex-1 bg-[#e2e8f0]" />
+                <span>OR</span>
+                <div className="h-px flex-1 bg-[#e2e8f0]" />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                disabled={isGoogleLoading || isLoading}
+                className="w-full py-2.5 border border-[#e2e8f0] text-[#0f172a] rounded-lg font-medium hover:bg-[#f8f9fa] focus:outline-none focus:ring-2 focus:ring-[#1e293b] focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isGoogleLoading ? 'Redirecting to Google...' : 'Continue with Google'}
               </button>
             </form>
 
@@ -207,6 +261,16 @@ export default function LoginPage() {
                   <span className="font-mono text-[#0f172a]">taker@school.edu / taker123</span>
                 </div>
               </div>
+            </div>
+
+            {/* Sign Up Link */}
+            <div className="mt-6 pt-6 border-t border-[#e2e8f0] text-center">
+              <p className="text-sm text-[#64748b]">
+                Don&apos;t have an account?{' '}
+                <a href="/auth/registration" className="text-[#1e293b] hover:underline font-medium">
+                  Sign up here
+                </a>
+              </p>
             </div>
           </div>
 

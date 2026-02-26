@@ -4,40 +4,17 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
-export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
+export default function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    console.log('[ProtectedRoute] State update', {
-      isLoading,
-      hasUser: Boolean(user),
-      userId: user?.id ?? null,
-      path: window.location.pathname,
-    });
-  }, [isLoading, user]);
-
-  useEffect(() => {
-    if (!isLoading) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      console.warn('[ProtectedRoute] Still loading after 10s', {
-        path: window.location.pathname,
-        hasUser: Boolean(user),
-      });
-    }, 10000);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [isLoading, user]);
-
-  useEffect(() => {
     if (!isLoading && !user) {
-      console.log('[ProtectedRoute] Redirecting to /auth/login (no user)');
+      console.log('[AdminRoute] No user; redirecting to /auth/login');
       router.push('/auth/login');
+    } else if (!isLoading && user && user.role !== 'Admin') {
+      console.log('[AdminRoute] Non-admin user; redirecting to /member');
+      router.push('/member');
     }
   }, [user, isLoading, router]);
 
@@ -52,7 +29,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     );
   }
 
-  if (!user) {
+  if (!user || user.role !== 'Admin') {
     return null;
   }
 

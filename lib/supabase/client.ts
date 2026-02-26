@@ -1,0 +1,45 @@
+import { createBrowserClient } from "@supabase/ssr";
+
+let browserClient: ReturnType<typeof createBrowserClient> | null = null;
+
+export function createClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY;
+
+  if (!supabaseUrl || !anonKey) {
+    console.warn('[Auth][Client] Supabase env vars are missing. Using mock client.');
+    // Return a minimal mock client to avoid runtime crashes when env vars
+    // are not configured (e.g. during local dev without .env). The mock only
+    // implements the auth methods used by the app and returns sane defaults.
+    const noop = async () => ({ data: { user: null }, error: null });
+    const noopSession = async () => ({ data: { session: null }, error: null });
+
+    return {
+      auth: {
+        getUser: noop,
+        getSession: noopSession,
+        onAuthStateChange: () => ({
+          data: { subscription: { unsubscribe: () => {} } },
+        }),
+        signInWithPassword: async () => ({ error: { message: 'Supabase not configured' } }),
+        signInWithOAuth: async () => ({ error: { message: 'Supabase not configured' } }),
+        signOut: async () => ({ error: null }),
+      },
+    } as unknown as ReturnType<typeof createBrowserClient>;
+  }
+
+  if (!browserClient) {
+    console.log('[Auth][Client] Creating singleton browser client');
+    browserClient = createBrowserClient(supabaseUrl, anonKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+      },
+    });
+  }
+
+  return browserClient;
+}
