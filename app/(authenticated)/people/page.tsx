@@ -3,7 +3,6 @@
 import { useState, useMemo } from 'react';
 import { Search, Plus, Filter, X, Shield, BarChart3, Users, Activity, Settings, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface Person {
@@ -264,9 +263,5 @@ function PeopleRegistryContent() {
 }
 
 export default function PeopleRegistry() {
-  return (
-    <ProtectedRoute>
-      <PeopleRegistryContent />
-    </ProtectedRoute>
-  );
+  return <PeopleRegistryContent />;
 }
