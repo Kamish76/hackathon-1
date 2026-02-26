@@ -167,7 +167,8 @@ WHERE n.nspname = 'public'
     'has_school_operator_role',
     'prevent_duplicate_direction',
     'create_person_registry_record',
-    'create_auth_users_record'
+    'create_auth_users_record',
+    'get_person_full_name'
   )
 ORDER BY p.proname;
 

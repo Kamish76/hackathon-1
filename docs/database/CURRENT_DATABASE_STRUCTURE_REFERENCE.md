@@ -269,10 +269,15 @@ Columns:
 - `updated_at timestamptz not null default now()`
 
 RLS Policies:
-- Users can read their own auth record
-- Users can update their own auth record
-- Admins can read all auth records
-- No direct INSERT policy (uses SECURITY DEFINER function)
+- `Authenticated users can read auth_users` - All authenticated users can read any record (FOR SELECT TO authenticated USING (true))
+- `Users can update their own auth record` - Users can update only their own record (FOR UPDATE USING (auth.uid() = id))
+- No direct INSERT policy (uses SECURITY DEFINER function `create_auth_users_record`)
+
+OAuth Flow:
+- When new Google OAuth users sign in, the callback route (`/auth/callback`) checks if they exist in auth_users
+- If not found, they're redirected to `/auth/registration?oauth=true` to complete their profile
+- On profile completion, `completeOAuthProfile()` creates person_registry and auth_users records
+- The RLS policy allows authenticated users to query auth_users for verification purposes
 
 ## 4) Optional User Foreign-Key Compatibility Layer
 To avoid dependency on a specific auth schema, user FK constraints are added conditionally:
@@ -311,6 +316,12 @@ Conditional FKs (constraint names):
   - SECURITY DEFINER function to create auth_users bridge records
   - Bypasses RLS policies and verifies user exists in auth.users
   - Links authenticated users to person_registry and school_operator_roles
+- `public.get_person_full_name(user_id uuid)`
+  - SECURITY DEFINER function to fetch person_registry full_name by user_id
+  - Bypasses RLS policies for safe data retrieval during OAuth flow
+  - Queries through auth_users bridge to find associated person_registry record
+  - Returns TEXT (full_name) or NULL if user not found in auth_users
+  - Used in AuthContext to display registered full_name instead of OAuth provider name
 
 ## 6) Triggers
 `BEFORE UPDATE` (maintain `updated_at`):
