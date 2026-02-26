@@ -11,6 +11,7 @@
 --   03_rename_taker_to_officer.sql          (operator_role 'Taker' → 'Officer')
 --   04_fix_officer_rpc_taker_compat.sql     (has_school_operator_role Taker compat)
 --   05_fix_rls_taker_role_alias.sql          (fix p_role='Taker' in existing RLS policy calls)
+--   05_fix_rls_taker_role_alias.sql          (officer RLS policies for person_registry, gates, access_events)
 --
 -- Usage:
 --   Execute sections individually in SQL editor.
