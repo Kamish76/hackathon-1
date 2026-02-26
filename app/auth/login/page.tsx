@@ -128,7 +128,7 @@ export default function LoginPage() {
 
             {error && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="text-sm text-red-800 font-medium">Authentication Failed</p>
                   <p className="text-sm text-red-700">{error}</p>
@@ -241,6 +241,16 @@ export default function LoginPage() {
                   <span className="font-mono text-[#0f172a]">taker@school.edu / taker123</span>
                 </div>
               </div>
+            </div>
+
+            {/* Sign Up Link */}
+            <div className="mt-6 pt-6 border-t border-[#e2e8f0] text-center">
+              <p className="text-sm text-[#64748b]">
+                Don&apos;t have an account?{' '}
+                <a href="/auth/registration" className="text-[#1e293b] hover:underline font-medium">
+                  Sign up here
+                </a>
+              </p>
             </div>
           </div>
 
