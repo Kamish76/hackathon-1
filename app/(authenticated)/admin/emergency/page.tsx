@@ -349,10 +349,10 @@ export default function EmergencyPage() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-[#f8f9fa]">
       <AdminSidebar activePage="emergency" />
 
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto pb-20 md:pb-0">
 
         {/* ── Active emergency banner ── */}
         {session && (
@@ -376,7 +376,7 @@ export default function EmergencyPage() {
           </div>
         )}
 
-        <div className="p-8">
+        <div className="p-4 md:p-8">
           <div className="mb-6">
             <h2 className="text-3xl font-bold text-[#0f172a] mb-1">Emergency Mode</h2>
             <p className="text-[#64748b]">

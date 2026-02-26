@@ -174,12 +174,12 @@ function AccessEventsContent() {
   const isLoading = events === null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-[#f8f9fa]">
       <AdminSidebar activePage="events" />
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
+      <main className="flex-1 overflow-auto pb-20 md:pb-0">
+        <div className="p-4 md:p-8">
           {/* Header */}
           <div className="mb-8">
             <div className="flex items-center justify-between mb-2">
