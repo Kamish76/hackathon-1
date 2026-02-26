@@ -381,7 +381,43 @@ Explicit admin gate policies (added by migration 06):
 - `"Admins can insert gates"` — INSERT on `gates` WITH CHECK for Admin role
 - `"Admins can update gates"` — UPDATE on `gates` USING for Admin role (used to toggle `is_active` and manage gate metadata)
 
-## 9) Seed Data
+Emergency mode policies (added by migration 07):
+- `"Officers and Admins can select emergency_sessions"` — SELECT on `emergency_sessions` for Officer or Admin role
+- `"Officers and Admins can insert emergency_sessions"` — INSERT on `emergency_sessions` WITH CHECK for Officer or Admin role (both can trigger emergency)
+- `"Admins can update emergency_sessions"` — UPDATE on `emergency_sessions` for Admin role only (resolve / add notes)
+- `"Admins can select emergency_roll_call"` — SELECT on `emergency_roll_call` for Admin role only
+- `"Admins can insert emergency_roll_call"` — INSERT on `emergency_roll_call` WITH CHECK for Admin role (populate on declare)
+- `"Admins can update emergency_roll_call"` — UPDATE on `emergency_roll_call` for Admin role only (mark accounted/missing)
+
+## 9) Emergency Mode Tables (migration 07)
+
+### `emergency_sessions`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid PK` | `gen_random_uuid()` |
+| `triggered_by` | `uuid not null` | FK → `auth.users(id)` |
+| `triggered_at` | `timestamptz` | default `now()` |
+| `resolved_at` | `timestamptz null` | set when resolved |
+| `is_active` | `boolean` | default `true` |
+| `notes` | `text null` | optional context |
+| `created_at` | `timestamptz` | default `now()` |
+
+Unique partial index: `emergency_sessions_single_active` — enforces at most one row with `is_active = true`.
+
+### `emergency_roll_call`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid PK` | `gen_random_uuid()` |
+| `session_id` | `uuid not null` | FK → `emergency_sessions(id)` ON DELETE CASCADE |
+| `person_id` | `uuid not null` | FK → `person_registry(id)` ON DELETE CASCADE |
+| `status` | `text` | `'UNKNOWN'` \| `'ACCOUNTED'` \| `'MISSING'`, default `'UNKNOWN'` |
+| `last_seen_gate_id` | `uuid null` | FK → `gates(id)` — gate of last known event |
+| `last_updated_by` | `uuid null` | FK → `auth.users(id)` |
+| `last_updated_at` | `timestamptz` | updated on each status change |
+
+Unique constraint: `(session_id, person_id)` — one row per person per session.
+
+## 10) Seed Data
 Default gates inserted idempotently:
 - `GATE-01` Main Gate (pedestrian)
 - `GATE-02` Vehicle Gate (vehicle lane)
@@ -397,6 +433,7 @@ Default gates inserted idempotently:
 | 05 | `05_fix_rls_taker_role_alias.sql` | Recreates `has_school_operator_role` so both `'Officer'` and `'Taker'` role checks accept `IN ('Officer','Taker','Admin')`. Adds four explicit RLS policies: `Officers can select person_registry`, `Officers can select gates`, `Officers can insert access_events`, `Officers can select access_events`. These unlock the officer scan/attendance/feed pages end-to-end. |
 | 05 | `05_fix_rls_taker_role_alias.sql` | Re-applies `has_school_operator_role` so that `p_role IN ('Officer','Taker')` both resolve correctly. Fixes the RLS policy `person_registry_select_operator` (and similar policies on other tables) which pass `p_role='Taker'` — after migration 03 these returned `false` for everyone, hiding all rows. |
 | 06 | `06_admin_gates_rls.sql` | Adds two admin-only RLS policies on `public.gates`: `Admins can insert gates` (INSERT WITH CHECK) and `Admins can update gates` (UPDATE USING). Unlocks the admin Gates management page — admins can add new gates and toggle `is_active`. |
+| 07 | `07_emergency_mode.sql` | Creates `emergency_sessions` and `emergency_roll_call` tables with RLS. Officers and Admins can INSERT sessions (trigger emergency); only Admins can manage the roll call. Unique partial index ensures at most one active session. |
 
 ## 11) Operational Notes
 - Script is additive and designed to be idempotent.

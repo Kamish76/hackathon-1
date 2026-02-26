@@ -1,26 +1,44 @@
 'use client';
 
-import { useState } from 'react';
-import { Shield, BarChart3, Users, Activity, Settings, LogOut, Bug, ChevronDown, ChevronRight, DoorOpen } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Shield, BarChart3, Users, Activity, Settings, LogOut, Bug, ChevronDown, ChevronRight, DoorOpen, AlertTriangle } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
-type ActivePage = 'dashboard' | 'people' | 'events' | 'gates' | 'checkpoints';
+type ActivePage = 'dashboard' | 'people' | 'events' | 'gates' | 'checkpoints' | 'emergency';
 
 interface AdminSidebarProps {
   activePage?: ActivePage;
 }
 
 const navItems: { label: string; href: string; icon: React.ReactNode; page: ActivePage }[] = [
-  { label: 'Dashboard',     href: '/admin/dashboard',   icon: <BarChart3 className="w-5 h-5" />, page: 'dashboard'   },
-  { label: 'People',        href: '/people',            icon: <Users className="w-5 h-5" />,     page: 'people'      },
-  { label: 'Access Events', href: '/events',            icon: <Activity className="w-5 h-5" />,  page: 'events'      },
-  { label: 'Gates',         href: '/admin/gates',        icon: <DoorOpen className="w-5 h-5" />,   page: 'gates'       },
-  { label: 'Checkpoints',   href: '/admin/checkpoints', icon: <Settings className="w-5 h-5" />,  page: 'checkpoints' },
+  { label: 'Dashboard',     href: '/admin/dashboard',   icon: <BarChart3 className="w-5 h-5" />,       page: 'dashboard'   },
+  { label: 'People',        href: '/people',            icon: <Users className="w-5 h-5" />,           page: 'people'      },
+  { label: 'Access Events', href: '/events',            icon: <Activity className="w-5 h-5" />,        page: 'events'      },
+  { label: 'Gates',         href: '/admin/gates',       icon: <DoorOpen className="w-5 h-5" />,        page: 'gates'       },
+  { label: 'Checkpoints',   href: '/admin/checkpoints', icon: <Settings className="w-5 h-5" />,        page: 'checkpoints' },
 ];
 
 export default function AdminSidebar({ activePage }: AdminSidebarProps) {
   const { user, logout } = useAuth();
+  const supabase = createClient();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [emergencyActive, setEmergencyActive] = useState(false);
+
+  useEffect(() => {
+    async function checkEmergency() {
+      const { data } = await supabase
+        .from('emergency_sessions')
+        .select('id')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+      setEmergencyActive(!!data);
+    }
+    checkEmergency();
+    const interval = setInterval(checkEmergency, 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <aside className="w-64 bg-white border-r border-[#e2e8f0] flex flex-col shrink-0">
@@ -55,6 +73,24 @@ export default function AdminSidebar({ activePage }: AdminSidebarProps) {
               </a>
             );
           })}
+
+          {/* Emergency — always rendered, styled red when active */}
+          <a
+            href="/admin/emergency"
+            className={
+              activePage === 'emergency'
+                ? 'flex items-center gap-3 px-3 py-2 rounded-lg bg-[#fef2f2] text-[#dc2626] font-medium'
+                : emergencyActive
+                  ? 'flex items-center gap-3 px-3 py-2 rounded-lg text-[#dc2626] bg-[#fef2f2] animate-pulse'
+                  : 'flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#fef2f2] hover:text-[#dc2626] transition-colors'
+            }
+          >
+            <AlertTriangle className="w-5 h-5" />
+            <span className="flex-1">Emergency</span>
+            {emergencyActive && activePage !== 'emergency' && (
+              <span className="w-2 h-2 rounded-full bg-[#dc2626] shrink-0" />
+            )}
+          </a>
         </div>
 
         {/* Settings */}
