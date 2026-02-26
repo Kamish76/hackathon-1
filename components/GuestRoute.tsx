@@ -10,7 +10,7 @@ export default function GuestRoute({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     if (!isLoading && user) {
-      router.push('/dashboard');
+      router.push('/admin/dashboard');
     }
   }, [user, isLoading, router]);
 
