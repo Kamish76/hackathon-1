@@ -81,6 +81,35 @@ function decodeRecordPayload(record?: NdefRecord) {
   return new TextDecoder().decode(bytes);
 }
 
+function extractTagIdFromRecord(record?: NdefRecord) {
+  const decoded = decodeRecordPayload(record);
+
+  if (!decoded) {
+    return { tagId: null, decoded: null };
+  }
+
+  const normalized = decoded.trim().toLowerCase();
+  const inlineMatch = normalized.match(uuidPattern);
+
+  if (inlineMatch?.[0]) {
+    return { tagId: inlineMatch[0], decoded };
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const fromQuery =
+      (parsed.searchParams.get("tag_id") || parsed.searchParams.get("id") || "").trim().toLowerCase();
+
+    if (uuidPattern.test(fromQuery)) {
+      return { tagId: fromQuery, decoded };
+    }
+  } catch {
+    // Decoded payload is not a URL; ignore.
+  }
+
+  return { tagId: null, decoded };
+}
+
 export default function OfficerScanPage() {
   const [gates, setGates] = useState<GateOption[]>([]);
   const [gateId, setGateId] = useState("");
@@ -167,16 +196,16 @@ export default function OfficerScanPage() {
 
       ndef.onreading = (event) => {
         const firstRecord = event.message?.records?.[0];
-        const payload = decodeRecordPayload(firstRecord)?.trim().toLowerCase() || "";
+        const { tagId, decoded } = extractTagIdFromRecord(firstRecord);
 
-        if (!payload || !uuidPattern.test(payload)) {
+        if (!tagId) {
           setMessage("Scanned tag payload is invalid. Expected UUID tag_id in NDEF text record.");
-          addLog("startNfcScan:invalid-tag-id", { payload, serialNumber: event.serialNumber });
+          addLog("startNfcScan:invalid-tag-id", { payload: decoded, serialNumber: event.serialNumber });
           setIsScanning(false);
           return;
         }
 
-        void submitScan({ tagId: payload, scanMethod: "NFC" });
+        void submitScan({ tagId, scanMethod: "NFC" });
 
         setIsScanning(false);
       };
