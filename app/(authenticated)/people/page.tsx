@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { Search, Plus, Filter, Shield, BarChart3, Users, Activity, Settings, LogOut } from 'lucide-react';
+import { Search, Plus, Filter } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
+import AdminSidebar from '@/components/AdminSidebar';
 
 interface Person {
   id: string;
@@ -23,7 +23,6 @@ const statusColors: Record<string, { bg: string; text: string }> = {
 };
 
 function PeopleRegistryContent() {
-  const { user, logout } = useAuth();
   const supabase = createClient();
 
   const [people, setPeople] = useState<Person[]>([]);
@@ -82,52 +81,7 @@ function PeopleRegistryContent() {
 
   return (
     <div className="flex min-h-screen bg-[#f8f9fa]">
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-[#e2e8f0] flex flex-col">
-        <div className="p-6 border-b border-[#e2e8f0]">
-          <div className="flex items-center gap-2">
-            <Shield className="w-8 h-8 text-[#1e293b]" />
-            <div>
-              <h1 className="text-lg font-semibold text-[#0f172a]">NFC Access</h1>
-              <p className="text-xs text-[#64748b]">Admin Portal</p>
-            </div>
-          </div>
-        </div>
-        
-        <nav className="flex-1 p-4">
-          <div className="space-y-1">
-            <a href="/admin/dashboard" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
-              <BarChart3 className="w-5 h-5" />
-              Dashboard
-            </a>
-            <a href="/people" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#f1f5f9] text-[#1e293b] font-medium">
-              <Users className="w-5 h-5" />
-              People
-            </a>
-            <a href="/events" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
-              <Activity className="w-5 h-5" />
-              Access Events
-            </a>
-            <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
-              <Settings className="w-5 h-5" />
-              Settings
-            </a>
-          </div>
-        </nav>
-
-        <div className="p-4 border-t border-[#e2e8f0]">
-          <div className="flex items-center gap-3 px-3 py-2">
-            <div className="w-8 h-8 rounded-full bg-[#1e293b] flex items-center justify-center text-white text-sm font-medium">
-              {user?.name.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-[#0f172a]">{user?.name}</p>
-              <p className="text-xs text-[#64748b]">{user?.role}</p>
-            </div>
-            <LogOut className="w-4 h-4 text-[#64748b] cursor-pointer hover:text-[#ef4444]" onClick={logout} />
-          </div>
-        </div>
-      </aside>
+      <AdminSidebar activePage="people" />
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">

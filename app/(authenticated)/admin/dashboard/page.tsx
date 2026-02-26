@@ -5,11 +5,10 @@ import {
   AlertTriangle,
   Clock,
   Shield,
-  BarChart3,
-  Settings,
   ArrowRight,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
+import AdminSidebar from '@/components/AdminSidebar';
 
 type DashboardStats = {
   currentInside: number;
@@ -124,50 +123,7 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="flex min-h-screen bg-[#f8f9fa]">
-      <aside className="w-64 bg-white border-r border-[#e2e8f0] flex flex-col">
-        <div className="p-6 border-b border-[#e2e8f0]">
-          <div className="flex items-center gap-2">
-            <Shield className="w-8 h-8 text-[#1e293b]" />
-            <div>
-              <h1 className="text-lg font-semibold text-[#0f172a]">NFC Access</h1>
-              <p className="text-xs text-[#64748b]">Admin Portal</p>
-            </div>
-          </div>
-        </div>
-
-        <nav className="flex-1 p-4">
-          <div className="space-y-1">
-            <a
-              href="/admin/dashboard"
-              className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#f1f5f9] text-[#1e293b] font-medium"
-            >
-              <BarChart3 className="w-5 h-5" />
-              Dashboard
-            </a>
-            <a
-              href="/people"
-              className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors"
-            >
-              <Users className="w-5 h-5" />
-              People
-            </a>
-            <a
-              href="/events"
-              className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors"
-            >
-              <Activity className="w-5 h-5" />
-              Access Events
-            </a>
-            <a
-              href="/admin/checkpoints"
-              className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors"
-            >
-              <Settings className="w-5 h-5" />
-              Checkpoints
-            </a>
-          </div>
-        </nav>
-      </aside>
+      <AdminSidebar activePage="dashboard" />
 
       <main className="flex-1 overflow-auto">
         <div className="p-8">
