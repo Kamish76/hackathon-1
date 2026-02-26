@@ -100,8 +100,8 @@ function PeopleRegistryContent() {
       <AdminSidebar activePage="people" />
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
+      <main className="flex-1 overflow-auto pb-20 md:pb-0">
+        <div className="p-4 md:p-8">
           {/* Header */}
           <div className="mb-8">
             <div className="flex items-center justify-between mb-2">

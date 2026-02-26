@@ -21,11 +21,6 @@ const typeColors: Record<string, string> = {
   'Special Guest':'bg-[#f0fdf4] text-[#16a34a]',
 };
 
-const gateColors: Record<string, string> = {
-  'GATE-01': 'bg-[#dbeafe] text-[#1d4ed8]',
-  'GATE-02': 'bg-[#fce7f3] text-[#be185d]',
-};
-
 const methodLabel: Record<string, string> = {
   QR: 'QR', NFC: 'NFC', MANUAL_OVERRIDE: 'Manual', MANIFEST: 'Manifest',
 };
@@ -64,10 +59,10 @@ export default function LiveFeedPage() {
   const todayDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-[#f8f9fa]">
       <OfficerSidebar activePage="feed" />
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
+      <main className="flex-1 overflow-auto pb-20 md:pb-0">
+        <div className="p-4 md:p-8">
           <div className="mb-8 flex items-start justify-between">
             <div>
               <h2 className="text-3xl font-bold text-[#0f172a] mb-2">Live Feed</h2>
@@ -139,17 +134,17 @@ export default function LiveFeedPage() {
                         <tr key={e.id} className="hover:bg-[#f8f9fa] transition-colors">
                           <td className="px-6 py-4 font-medium text-[#0f172a]">{pr.full_name}</td>
                           <td className="px-6 py-4">
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${typeColors[pr.person_type] ?? 'bg-[#f1f5f9] text-[#64748b]'}`}>
+                            <span className={`whitespace-nowrap text-xs font-medium px-2.5 py-1 rounded-full ${typeColors[pr.person_type] ?? 'bg-[#f1f5f9] text-[#64748b]'}`}>
                               {pr.person_type}
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${gateColors[g.gate_code] ?? 'bg-[#f1f5f9] text-[#64748b]'}`}>
+                            <span className="whitespace-nowrap text-xs font-medium px-2.5 py-1 rounded-full bg-[#f1f5f9] text-[#64748b]">
                               {g.gate_name}
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            <span className={`whitespace-nowrap inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
                               e.direction === 'IN' ? 'bg-[#dcfce7] text-[#16a34a]' : 'bg-[#fee2e2] text-[#ef4444]'
                             }`}>
                               {e.direction === 'IN' ? <ArrowDown className="w-3 h-3" /> : <ArrowUp className="w-3 h-3" />}
