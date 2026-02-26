@@ -38,7 +38,7 @@ export default function AdminDashboard() {
               <Users className="w-5 h-5" />
               People
             </a>
-            <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
+            <a href="/events" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
               <Activity className="w-5 h-5" />
               Access Events
             </a>
