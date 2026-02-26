@@ -57,7 +57,7 @@ export default function AdminCheckpointsPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#f8f9fa]">
+    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
       <AdminSidebar activePage="checkpoints" />
       <main className="flex-1 overflow-auto">
         <div className="p-8">

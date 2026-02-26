@@ -122,7 +122,7 @@ export default async function AdminDashboardPage() {
   const { stats, recentActivity } = await getDashboardData();
 
   return (
-    <div className="flex min-h-screen bg-[#f8f9fa]">
+    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
       <AdminSidebar activePage="dashboard" />
 
       <main className="flex-1 overflow-auto">
