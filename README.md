@@ -54,6 +54,21 @@ NFC_API_KEY=...      # optional x-api-key sent to NFC API
 
 For full external API integration details, see `INTEGRATE_WITH_EXTERNAL_WEBAPP.md`.
 
+## NFC Testing Mode (Temporary)
+
+For current testing, this app allows scans to proceed even when the tag payload does not include `cnt` (counter mirror).
+
+- Tag registration/linking still works (`set`, `replace`, `deactivate`).
+- UID-based scans and activity logging can still run.
+- Manual counter fallback may be used during testing.
+
+Important limitation:
+
+- Without a real mirrored `cnt` value from NTAG counter mirror configuration, anti-clone verification is not cryptographically reliable.
+- Treat this mode as development/testing only.
+
+When moving to production, configure tags with proper mirror settings and require real `cnt` values for scan verification.
+
 3. Use the initialized clients:
 
 - Browser/client components: `lib/supabase/client.ts`

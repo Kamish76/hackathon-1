@@ -60,3 +60,15 @@ Admin routes:
 - Supabase in this app is the source of truth for member tag ownership/status.
 - External NFC API is called by server routes in this app.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` and `NFC_API_KEY` server-only.
+
+## 7) Temporary testing behavior (`cnt` optional)
+
+For current testing, the officer scanner accepts scans even when `cnt` is missing:
+
+- If `cnt` is present and valid, the app calls external `/api/scan` and performs anti-clone verification.
+- If `cnt` is missing, the app still records an NFC scan log/event in local `access_events` and marks it as testing mode.
+
+Important:
+
+- `cnt`-missing scans are for testing workflow only and should not be treated as clone-protected verification.
+- Re-enable strict counter-required validation before production rollout.
