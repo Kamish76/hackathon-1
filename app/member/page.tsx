@@ -5,12 +5,12 @@ import { Calendar, Phone, User, LogOut } from 'lucide-react';
 
 export default function MemberProfile() {
   const memberData = {
-    name: 'John Doe',
+    name: 'Jake C',
     birthDate: '01/15/1998',
     contactNumber: '+1 (555) 123-4567',
     studentId: 'STU-2024-001',
     profileImage:
-      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&h=400&fit=crop'
+      '/jeyk.png' // replace with your new picture file placed in public/ folder
   };
 
   const qrCodeValue = JSON.stringify({
@@ -25,7 +25,7 @@ export default function MemberProfile() {
         <div className="flex flex-col md:flex-row gap-8">
           {/* Left column: two stacked boxes */}
           <div className="flex-1 flex flex-col gap-6">
-            {/* Profile box */}
+            {/* Combined profile/details card */}
             <div className="bg-white rounded-2xl shadow-lg border border-[#e9eef6] p-8 md:p-12 relative flex flex-col items-center">
               {/* Avatar */}
               <div className="absolute -top-14">
@@ -39,36 +39,42 @@ export default function MemberProfile() {
                 <h1 className="text-2xl font-semibold text-[#0f172a]">{memberData.name}</h1>
                 <p className="text-sm text-[#64748b] mt-1">Student</p>
               </div>
+              {/* basic information under header */}
+              <div className="mt-8 w-full">
+                <div className="space-y-4 text-center md:text-left">
+                  <div>
+                    <p className="text-xs text-[#64748b] uppercase tracking-wide">Full name</p>
+                    <p className="text-lg text-[#0f172a] font-medium">{memberData.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-[#64748b] uppercase tracking-wide">Birth date</p>
+                    <p className="text-lg text-[#0f172a] font-medium">{memberData.birthDate}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-[#64748b] uppercase tracking-wide">Contact</p>
+                    <p className="text-lg text-[#0f172a] font-medium">{memberData.contactNumber}</p>
+                  </div>
+                </div>
+                {/* removed duplicate ID reference */}
+              </div>
             </div>
-            {/* Details & QR box */}
-            <div className="bg-white rounded-2xl shadow-lg border border-[#e9eef6] p-8 md:p-12">
-              <div className="space-y-4 text-center md:text-left">
-                <div>
-                  <p className="text-xs text-[#64748b] uppercase tracking-wide">Full name</p>
-                  <p className="text-lg text-[#0f172a] font-medium">{memberData.name}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-[#64748b] uppercase tracking-wide">Birth date</p>
-                  <p className="text-lg text-[#0f172a] font-medium">{memberData.birthDate}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-[#64748b] uppercase tracking-wide">Contact</p>
-                  <p className="text-lg text-[#0f172a] font-medium">{memberData.contactNumber}</p>
+            {/* QR box separate */}
+            <div className="bg-white rounded-2xl shadow-lg border border-[#e9eef6] p-8 md:p-12 mt-6 md:mt-8">
+              <div className="flex justify-center">
+                <div className="bg-[#fafbff] border border-[#eef4ff] rounded-xl p-6 shadow-sm inline-block">
+                  <QRCodeSVG value={qrCodeValue} size={220} level="H" includeMargin fgColor="#0f172a" bgColor="#ffffff" />
                 </div>
               </div>
+              {/* move ID reference & link below QR */}
               <div className="mt-6 text-center">
                 <p className="text-xs text-[#64748b]">Reference ID: {memberData.studentId}</p>
                 <a href="#" className="text-sm text-[#2563eb] hover:underline">
                   Lost your ID?
                 </a>
               </div>
-              <div className="mt-8 flex justify-center">
-                <div className="bg-[#fafbff] border border-[#eef4ff] rounded-xl p-6 shadow-sm inline-block">
-                  <QRCodeSVG value={qrCodeValue} size={220} level="H" includeMargin fgColor="#0f172a" bgColor="#ffffff" />
-                </div>
-              </div>
             </div>
           </div>
+
 
           {/* Right - Attendance History */}
           <aside className="flex flex-col w-full md:w-1/3">
