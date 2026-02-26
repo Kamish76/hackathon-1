@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Calendar, Phone, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -100,7 +100,7 @@ export default function MemberProfile() {
 
   const getProfileImagePath = (userId: string) => `${userId}/avatar`;
 
-  const setProfileImageFromStorage = async (userId: string) => {
+  const setProfileImageFromStorage = useCallback(async (userId: string) => {
     const { data, error } = await supabase.storage
       .from(profileImageBucket)
       .download(getProfileImagePath(userId));
@@ -118,7 +118,7 @@ export default function MemberProfile() {
     const objectUrl = URL.createObjectURL(data);
     profileObjectUrlRef.current = objectUrl;
     setMemberData((prev) => ({ ...prev, profileImage: objectUrl }));
-  };
+  }, [profileImageBucket, supabase, user?.name]);
 
   const handleProfileImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -244,7 +244,9 @@ export default function MemberProfile() {
       return;
     }
 
-    void setProfileImageFromStorage(user.id);
+    queueMicrotask(() => {
+      void setProfileImageFromStorage(user.id);
+    });
 
     return () => {
       if (profileObjectUrlRef.current) {
@@ -252,7 +254,7 @@ export default function MemberProfile() {
         profileObjectUrlRef.current = null;
       }
     };
-  }, [supabase, user, profileImageBucket]);
+  }, [setProfileImageFromStorage, user]);
 
   useEffect(() => {
     const loadMemberData = async () => {
