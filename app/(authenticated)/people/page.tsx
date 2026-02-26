@@ -63,7 +63,7 @@ function PeopleRegistryContent() {
         setFetchError('Failed to load people. Please try again.');
       } else {
         setPeople(
-          ((data ?? []) as PersonRegistryRow[]).map((row) => ({
+          (data ?? []).map((row: { id: string; full_name: string; person_type: string; email: string | null; nfc_tag_id: string | null; is_active: boolean }) => ({
             id: row.id,
             name: row.full_name ?? 'Unknown',
             type: normalizePersonType(row.person_type),

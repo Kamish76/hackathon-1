@@ -42,8 +42,18 @@ export default async function AdminLayout({
   });
 
   if (error || !adminRole) {
-    console.log('[AdminLayout] User is not active Admin; redirecting to /member');
-    redirect('/member');
+    // Check if they're a Taker to send them to the right place
+    const { data: officerRole } = await supabase
+      .from('school_operator_roles')
+      .select('operator_role')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .eq('operator_role', 'Officer')
+      .maybeSingle();
+
+    const dest = officerRole ? '/officer' : '/member';
+    console.log(`[AdminLayout] User is not active Admin; redirecting to ${dest}`);
+    redirect(dest);
   }
 
   console.log('[AdminLayout] Access granted to admin route');

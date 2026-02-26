@@ -5,6 +5,12 @@
 --   Run these queries against your database to inspect the current ingress/egress
 --   structure (tables, columns, constraints, indexes, triggers, views, RLS).
 --
+-- Applied migrations:
+--   01_create_users_table.sql
+--   02_fix_school_operator_roles_rls_recursion.sql
+--   03_rename_taker_to_officer.sql          (operator_role 'Taker' → 'Officer')
+--   04_fix_officer_rpc_taker_compat.sql     (has_school_operator_role Taker compat)
+--
 -- Usage:
 --   Execute sections individually in SQL editor.
 -- ============================================================================

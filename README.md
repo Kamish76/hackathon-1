@@ -43,9 +43,16 @@ npm install @supabase/supabase-js @supabase/ssr
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
+NEXT_PUBLIC_NFC_API_BASE_URL=...
+NFC_API_BASE_URL=... # optional server override
+NFC_API_KEY=...      # optional x-api-key sent to NFC API
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` is required for admin member management actions (deactivate and permanent account deletion). Keep it server-only and never expose it to client components.
+
+`NEXT_PUBLIC_NFC_API_BASE_URL` points to your separate NFC backend API deployment used for member tag registration/status actions.
+
+For full external API integration details, see `INTEGRATE_WITH_EXTERNAL_WEBAPP.md`.
 
 3. Use the initialized clients:
 

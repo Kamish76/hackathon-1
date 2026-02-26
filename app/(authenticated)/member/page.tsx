@@ -31,6 +31,39 @@ type ManifestRow = {
   direction: "IN" | "OUT" | "BOTH";
 };
 
+type MemberTagStatusResponse = {
+  tag: {
+    uid: string | null;
+    status: "none" | "active" | "deactivated" | "replaced";
+    deactivation_reason: "lost" | "stolen" | "damaged" | "other" | null;
+    last_changed_at: string | null;
+  };
+  cooldown: {
+    enabled: boolean;
+    days: number;
+    can_change_now: boolean;
+    next_allowed_at: string | null;
+    remaining_hours: number;
+  };
+  external: {
+    reachable: boolean;
+    scan_count?: number;
+    last_counter?: number;
+    last_scanned_at?: string;
+    status?: string;
+    message?: string;
+  } | null;
+};
+
+type ScanVerificationResult = {
+  status: "first_scan" | "valid" | "skipped_scans" | "clone_detected";
+  message: string;
+  expected_counter: number;
+  received_counter: number;
+  scan_count: number;
+  uid: string;
+};
+
 const normalizePersonTypeLabel = (personType?: string | null) => {
   const normalized = (personType || "")
     .trim()
@@ -95,6 +128,15 @@ export default function MemberProfile() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [tagStatus, setTagStatus] = useState<MemberTagStatusResponse | null>(null);
+  const [tagLoading, setTagLoading] = useState(false);
+  const [detectedTagUid, setDetectedTagUid] = useState("");
+  const [deactivateReason, setDeactivateReason] = useState<"lost" | "stolen" | "damaged" | "other">("lost");
+  const [tagActionLoading, setTagActionLoading] = useState<"set" | "replace" | "deactivate" | null>(null);
+  const [tagMessage, setTagMessage] = useState("");
+  const [isDetectingTag, setIsDetectingTag] = useState(false);
+  const [isVerifyingCounterScan, setIsVerifyingCounterScan] = useState(false);
+  const [lastScanResult, setLastScanResult] = useState<ScanVerificationResult | null>(null);
 
   const isVehicleTabDisabled = personTypeLabel === "Visitor" || personTypeLabel === "Special Guest";
 
@@ -238,6 +280,192 @@ export default function MemberProfile() {
 
     setIsSavingProfile(false);
   };
+
+  const loadTagStatus = useCallback(async () => {
+    setTagLoading(true);
+    const response = await fetch("/api/member/tag", { cache: "no-store" });
+    const result = await response.json();
+
+    if (!response.ok) {
+      setTagMessage(result?.error || "Failed to load tag status.");
+      setTagStatus(null);
+      setTagLoading(false);
+      return;
+    }
+
+    setTagStatus(result as MemberTagStatusResponse);
+    setTagMessage("");
+    setTagLoading(false);
+  }, []);
+
+  const runTagAction = useCallback(
+    async (action: "set" | "replace" | "deactivate") => {
+      setTagActionLoading(action);
+
+      const endpoint =
+        action === "set"
+          ? "/api/member/tag/set"
+          : action === "replace"
+            ? "/api/member/tag/replace"
+            : "/api/member/tag/deactivate";
+
+      const payload =
+        action === "deactivate"
+          ? { reason: deactivateReason }
+          : action === "replace"
+            ? { new_uid: detectedTagUid }
+            : { uid: detectedTagUid };
+
+      const response = await fetch(endpoint, {
+        method: action === "set" ? "POST" : "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        const cooldownHint = result?.next_allowed_at
+          ? ` Next change allowed at ${new Date(result.next_allowed_at).toLocaleString()}.`
+          : "";
+        setTagMessage((result?.error || "Tag action failed.") + cooldownHint);
+        setTagActionLoading(null);
+        return;
+      }
+
+      setTagMessage(result?.message || "Tag updated.");
+      if (action !== "deactivate") {
+        setDetectedTagUid("");
+      }
+      await loadTagStatus();
+      setTagActionLoading(null);
+    },
+    [deactivateReason, detectedTagUid, loadTagStatus]
+  );
+
+  const detectTagUidAutomatically = useCallback(async () => {
+    const ndefCtor = (window as unknown as {
+      NDEFReader?: new () => {
+        scan: () => Promise<void>;
+        onreading: ((event: { serialNumber?: string }) => void) | null;
+        onreadingerror: ((event: unknown) => void) | null;
+      };
+    }).NDEFReader;
+
+    if (!ndefCtor) {
+      setTagMessage("Web NFC is not supported on this browser/device.");
+      return;
+    }
+
+    setIsDetectingTag(true);
+    setTagMessage("Tap the tag to read its UID automatically.");
+
+    try {
+      const ndef = new ndefCtor();
+      await ndef.scan();
+
+      ndef.onreading = (event) => {
+        if (!event.serialNumber) {
+          setTagMessage("Unable to read tag UID. Try another tap.");
+          setIsDetectingTag(false);
+          return;
+        }
+
+        setDetectedTagUid(event.serialNumber);
+        setTagMessage(`Tag detected: ${event.serialNumber}`);
+        setIsDetectingTag(false);
+      };
+
+      ndef.onreadingerror = () => {
+        setTagMessage("Tag read error. Please tap again.");
+        setIsDetectingTag(false);
+      };
+    } catch {
+      setTagMessage("Unable to start NFC scanner. Allow NFC permission and try again.");
+      setIsDetectingTag(false);
+    }
+  }, []);
+
+  const verifyCounterScan = useCallback(async () => {
+    const ndefCtor = (window as unknown as {
+      NDEFReader?: new () => {
+        scan: () => Promise<void>;
+        onreading:
+          | ((event: { serialNumber?: string; message?: { records?: Array<{ data?: BufferSource }> } }) => void)
+          | null;
+        onreadingerror: ((event: unknown) => void) | null;
+      };
+    }).NDEFReader;
+
+    if (!ndefCtor) {
+      setTagMessage("Web NFC is not supported on this browser/device.");
+      return;
+    }
+
+    setIsVerifyingCounterScan(true);
+    setTagMessage("Tap the tag to verify counter and scan status.");
+
+    try {
+      const ndef = new ndefCtor();
+      await ndef.scan();
+
+      ndef.onreading = async (event) => {
+        try {
+          const firstRecord = event.message?.records?.[0];
+          const recordData = firstRecord?.data;
+
+          if (!recordData) {
+            setTagMessage("No NDEF URL payload found on tag.");
+            setIsVerifyingCounterScan(false);
+            return;
+          }
+
+          const payloadUrl = new TextDecoder().decode(recordData as ArrayBuffer);
+          const counterRaw = new URL(payloadUrl).searchParams.get("cnt");
+          const counter = Number(counterRaw);
+
+          if (!Number.isInteger(counter) || counter < 0) {
+            setTagMessage("Counter mirror (cnt) not found or invalid on tag payload.");
+            setIsVerifyingCounterScan(false);
+            return;
+          }
+
+          const response = await fetch("/api/member/tag/scan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              uid: event.serialNumber || undefined,
+              counter,
+            }),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok && response.status !== 409) {
+            setTagMessage(result?.error || "Counter scan verification failed.");
+            setIsVerifyingCounterScan(false);
+            return;
+          }
+
+          setLastScanResult(result as ScanVerificationResult);
+          setTagMessage(result?.message || "Scan verified.");
+          await loadTagStatus();
+        } catch {
+          setTagMessage("Unable to process scanned payload.");
+        } finally {
+          setIsVerifyingCounterScan(false);
+        }
+      };
+
+      ndef.onreadingerror = () => {
+        setTagMessage("Tag read error. Please tap again.");
+        setIsVerifyingCounterScan(false);
+      };
+    } catch {
+      setTagMessage("Unable to start NFC scan verification. Allow NFC permission and try again.");
+      setIsVerifyingCounterScan(false);
+    }
+  }, [loadTagStatus]);
 
   useEffect(() => {
     if (!user) {
@@ -424,6 +652,20 @@ export default function MemberProfile() {
     void loadMemberData();
   }, [supabase, user]);
 
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      void loadTagStatus();
+    }, 0);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [loadTagStatus, user]);
+
   if (isLoading || pageLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa]">
@@ -436,6 +678,23 @@ export default function MemberProfile() {
   }
 
   const qrCodeValue = memberData.studentId ? `REFERENCE_ID:${memberData.studentId}` : "REFERENCE_ID:UNAVAILABLE";
+  const effectiveTagStatus: MemberTagStatusResponse =
+    tagStatus ?? {
+      tag: {
+        uid: null,
+        status: "none",
+        deactivation_reason: null,
+        last_changed_at: null,
+      },
+      cooldown: {
+        enabled: true,
+        days: 7,
+        can_change_now: true,
+        next_allowed_at: null,
+        remaining_hours: 0,
+      },
+      external: null,
+    };
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] flex items-center justify-center py-12">
@@ -657,6 +916,134 @@ export default function MemberProfile() {
             </div>
 
             {/* Announcements - span full width */}
+            <div className="bg-white rounded-2xl shadow-lg border border-[#e9eef6] p-6 md:col-span-2">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-semibold text-[#1e293b]">Tag Management</h4>
+                <button
+                  type="button"
+                  className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                  onClick={loadTagStatus}
+                  disabled={tagLoading || tagActionLoading !== null}
+                >
+                  {tagLoading ? "Refreshing..." : "Refresh"}
+                </button>
+              </div>
+
+              <div className="space-y-3 text-sm">
+                  <p>
+                    <span className="font-semibold">Current UID:</span> {effectiveTagStatus.tag.uid || "Not linked"}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Status:</span> {effectiveTagStatus.tag.status}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Last change:</span>{" "}
+                    {effectiveTagStatus.tag.last_changed_at ? new Date(effectiveTagStatus.tag.last_changed_at).toLocaleString() : "N/A"}
+                  </p>
+                  {effectiveTagStatus.tag.deactivation_reason ? (
+                    <p>
+                      <span className="font-semibold">Deactivation reason:</span> {effectiveTagStatus.tag.deactivation_reason}
+                    </p>
+                  ) : null}
+                  <p>
+                    <span className="font-semibold">Cooldown:</span>{" "}
+                    {effectiveTagStatus.cooldown.enabled
+                      ? effectiveTagStatus.cooldown.can_change_now
+                        ? `Enabled (${effectiveTagStatus.cooldown.days} days) - available now`
+                        : `Enabled (${effectiveTagStatus.cooldown.days} days) - ${effectiveTagStatus.cooldown.remaining_hours} hour(s) remaining`
+                      : "Disabled"}
+                  </p>
+                  {effectiveTagStatus.external ? (
+                    <p>
+                      <span className="font-semibold">External API status:</span>{" "}
+                      {effectiveTagStatus.external.reachable
+                        ? `reachable${typeof effectiveTagStatus.external.scan_count === "number" ? `, scans: ${effectiveTagStatus.external.scan_count}` : ""}`
+                        : `unreachable (${effectiveTagStatus.external.message || "unknown error"})`}
+                    </p>
+                  ) : null}
+
+                  <div className="pt-2 border-t border-[#e2e8f0] space-y-2">
+                    <label className="text-xs text-[#64748b] uppercase tracking-wide">Detected tag UID (automatic)</label>
+                    <div className="w-full border border-[#e2e8f0] rounded px-3 py-2 text-sm bg-[#f8fafc]">
+                      {detectedTagUid || "No tag detected yet"}
+                    </div>
+                    <button
+                      type="button"
+                      className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                      onClick={() => void detectTagUidAutomatically()}
+                      disabled={isDetectingTag || tagActionLoading !== null || isVerifyingCounterScan}
+                    >
+                      {isDetectingTag ? "Waiting for tag tap..." : "Detect Tag UID Automatically"}
+                    </button>
+                    <p className="text-xs text-[#64748b]">
+                      New tag registration starts at scan counter baseline 0 in the NFC API.
+                    </p>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                        onClick={() => void runTagAction("set")}
+                        disabled={tagActionLoading !== null || !detectedTagUid.trim() || isDetectingTag}
+                      >
+                        {tagActionLoading === "set" ? "Saving..." : effectiveTagStatus.tag.status === "none" ? "Set Tag" : "Re-activate with New Tag"}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                        onClick={() => void runTagAction("replace")}
+                        disabled={tagActionLoading !== null || !detectedTagUid.trim() || effectiveTagStatus.tag.status !== "active" || isDetectingTag}
+                      >
+                        {tagActionLoading === "replace" ? "Replacing..." : "Replace Tag"}
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                      onClick={() => void verifyCounterScan()}
+                      disabled={isVerifyingCounterScan || tagActionLoading !== null}
+                    >
+                      {isVerifyingCounterScan ? "Waiting for scan tap..." : "Verify Counter Scan via API"}
+                    </button>
+
+                    {lastScanResult ? (
+                      <div className="text-xs text-[#64748b] space-y-1 border border-[#e2e8f0] rounded p-2">
+                        <p><span className="font-semibold">Last scan status:</span> {lastScanResult.status}</p>
+                        <p><span className="font-semibold">Expected/Received:</span> {lastScanResult.expected_counter} / {lastScanResult.received_counter}</p>
+                        <p><span className="font-semibold">Total scans:</span> {lastScanResult.scan_count}</p>
+                      </div>
+                    ) : null}
+
+                    <div className="pt-2 border-t border-[#e2e8f0] space-y-2">
+                      <label className="text-xs text-[#64748b] uppercase tracking-wide">Deactivate reason</label>
+                      <select
+                        value={deactivateReason}
+                        onChange={(event) =>
+                          setDeactivateReason(event.target.value as "lost" | "stolen" | "damaged" | "other")
+                        }
+                        className="w-full border border-[#e2e8f0] rounded px-3 py-2 text-sm"
+                      >
+                        <option value="lost">lost</option>
+                        <option value="stolen">stolen</option>
+                        <option value="damaged">damaged</option>
+                        <option value="other">other</option>
+                      </select>
+                      <button
+                        type="button"
+                        className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                        onClick={() => void runTagAction("deactivate")}
+                        disabled={tagActionLoading !== null || effectiveTagStatus.tag.status !== "active"}
+                      >
+                        {tagActionLoading === "deactivate" ? "Deactivating..." : "Deactivate Tag"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {tagMessage ? <p className="text-xs text-[#64748b]">{tagMessage}</p> : null}
+                </div>
+            </div>
+
             <div className="bg-white rounded-2xl shadow-lg border border-[#e9eef6] p-6 md:col-span-2">
               <h4 className="font-semibold text-[#1e293b] mb-2">Security Announcements</h4>
               <ul className="list-disc list-inside text-sm space-y-1">
