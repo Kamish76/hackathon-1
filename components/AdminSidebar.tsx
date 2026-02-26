@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Shield, BarChart3, Users, Activity, Settings, LogOut, Bug, ChevronDown, ChevronRight } from 'lucide-react';
+import { Shield, BarChart3, Users, Activity, Settings, LogOut, Bug, ChevronDown, ChevronRight, DoorOpen } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
-type ActivePage = 'dashboard' | 'people' | 'events' | 'checkpoints';
+type ActivePage = 'dashboard' | 'people' | 'events' | 'gates' | 'checkpoints';
 
 interface AdminSidebarProps {
   activePage?: ActivePage;
@@ -14,6 +14,7 @@ const navItems: { label: string; href: string; icon: React.ReactNode; page: Acti
   { label: 'Dashboard',     href: '/admin/dashboard',   icon: <BarChart3 className="w-5 h-5" />, page: 'dashboard'   },
   { label: 'People',        href: '/people',            icon: <Users className="w-5 h-5" />,     page: 'people'      },
   { label: 'Access Events', href: '/events',            icon: <Activity className="w-5 h-5" />,  page: 'events'      },
+  { label: 'Gates',         href: '/admin/gates',        icon: <DoorOpen className="w-5 h-5" />,   page: 'gates'       },
   { label: 'Checkpoints',   href: '/admin/checkpoints', icon: <Settings className="w-5 h-5" />,  page: 'checkpoints' },
 ];
 
