@@ -635,6 +635,13 @@ export default function MemberProfile() {
     addDebugLog("runTesterWrite:start", { testerUrlValue });
 
     try {
+      const formatError = (error: unknown) => {
+        if (error instanceof Error) {
+          return `${error.name}: ${error.message}`;
+        }
+        return String(error);
+      };
+
       const ndef = new ndefCtor();
       if (!ndef.write) {
         setTagMessage("Web NFC write is not supported on this browser/device.");
@@ -643,16 +650,92 @@ export default function MemberProfile() {
         return;
       }
 
-      await ndef.write(testerUrlValue);
-      setTagMessage("Tester write success.");
-      addDebugLog("runTesterWrite:success", { testerUrlValue });
+      const writeAttempts: Array<{ mode: "string" | "url-record"; payload: string | { records: Array<{ recordType: string; data: string }> } }> = [
+        { mode: "string", payload: testerUrlValue },
+        { mode: "url-record", payload: { records: [{ recordType: "url", data: testerUrlValue }] } },
+      ];
+
+      let appliedMode: "string" | "url-record" | null = null;
+      let lastWriteError: unknown = null;
+
+      for (const attempt of writeAttempts) {
+        try {
+          await ndef.write(attempt.payload);
+          appliedMode = attempt.mode;
+          break;
+        } catch (error) {
+          lastWriteError = error;
+          addDebugLog("runTesterWrite:attempt-failed", {
+            mode: attempt.mode,
+            error: formatError(error),
+          });
+        }
+      }
+
+      if (!appliedMode) {
+        throw lastWriteError ?? new Error("No write mode succeeded.");
+      }
+
+      setTagMessage("Tester write command sent. Tap the same tag again to verify payload.");
+      addDebugLog("runTesterWrite:success", { testerUrlValue, mode: appliedMode });
+
+      setIsTesterReading(true);
+      const verifyReader = new ndefCtor();
+      await verifyReader.scan();
+
+      verifyReader.onreading = (event) => {
+        const firstRecord = event.message?.records?.[0];
+        const payload = decodeRecordPayload(firstRecord);
+
+        const readResult = {
+          serialNumber: event.serialNumber || null,
+          recordType: firstRecord?.recordType || null,
+          mediaType: firstRecord?.mediaType || null,
+          payload,
+        };
+
+        setTesterReadResult(readResult);
+        setTagMessage("Tester write verified by read.");
+        addDebugLog("runTesterWrite:verify-success", {
+          mode: appliedMode,
+          serialNumber: event.serialNumber,
+          payload,
+        });
+        setIsTesterReading(false);
+      };
+
+      verifyReader.onreadingerror = (error) => {
+        setTagMessage("Tester write sent, but verification read failed. Use Tester Read to confirm.");
+        addDebugLog("runTesterWrite:verify-read-error", {
+          mode: appliedMode,
+          error: formatError(error),
+        });
+        setIsTesterReading(false);
+      };
+
+      window.setTimeout(() => {
+        setIsTesterReading((prev) => {
+          if (!prev) {
+            return prev;
+          }
+
+          setTagMessage("Verification timed out. Tap Tester Read to confirm written payload.");
+          addDebugLog("runTesterWrite:verify-timeout", { mode: appliedMode });
+          return false;
+        });
+      }, 15000);
+
       setIsTesterWriting(false);
-    } catch {
-      setTagMessage("Tester write failed. Tag may be read-only or browser denied write.");
-      addDebugLog("runTesterWrite:error", { testerUrlValue });
+    } catch (error) {
+      setTagMessage("Tester write failed. Tag may be read-only, locked, or browser denied write.");
+      addDebugLog("runTesterWrite:error", {
+        testerUrlValue,
+        error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      });
+      setIsTesterReading(false);
       setIsTesterWriting(false);
     }
-  }, [addDebugLog, getNdefReaderCtor, testerUrlValue]);
+  }, [addDebugLog, decodeRecordPayload, getNdefReaderCtor, testerUrlValue]);
 
   useEffect(() => {
     if (!user) {
