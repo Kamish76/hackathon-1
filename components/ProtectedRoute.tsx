@@ -9,7 +9,34 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const router = useRouter();
 
   useEffect(() => {
+    console.log('[ProtectedRoute] State update', {
+      isLoading,
+      hasUser: Boolean(user),
+      userId: user?.id ?? null,
+      path: window.location.pathname,
+    });
+  }, [isLoading, user]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      console.warn('[ProtectedRoute] Still loading after 10s', {
+        path: window.location.pathname,
+        hasUser: Boolean(user),
+      });
+    }, 10000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isLoading, user]);
+
+  useEffect(() => {
     if (!isLoading && !user) {
+      console.log('[ProtectedRoute] Redirecting to /auth/login (no user)');
       router.push('/auth/login');
     }
   }, [user, isLoading, router]);

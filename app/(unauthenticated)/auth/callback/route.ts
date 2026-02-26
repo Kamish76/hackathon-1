@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
-  const next = requestUrl.searchParams.get('next') ?? '/dashboard';
+  const next = requestUrl.searchParams.get('next') ?? '/admin/dashboard';
 
   console.log('🔵 OAuth Callback Hit!');
   console.log('Code:', code ? 'present' : 'missing');
