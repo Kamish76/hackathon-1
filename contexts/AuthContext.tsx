@@ -9,7 +9,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'Admin' | 'Student' | 'Staff' | 'Visitor' | 'Special Guest' | 'Taker';
+  role: 'Admin' | 'Student' | 'Staff' | 'Visitor' | 'Special Guest' | 'Officer';
 }
 
 interface AuthContextType {
@@ -43,7 +43,7 @@ function mapSupabaseUser(
     id: user.id,
     email,
     name: fullName || email || 'User',
-    role: personRole ?? 'Taker',
+    role: personRole ?? 'Officer',
   };
 }
 
@@ -113,35 +113,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.warn('⚠️ RPC call failed:', error instanceof Error ? error.message : error);
         }
 
-        // Fetch admin role from school_operator_roles
-        let personRole: User['role'] = 'Taker';
+        // Fetch role via SECURITY DEFINER RPC functions (bypasses RLS on school_operator_roles)
+        let personRole: User['role'] = 'Officer';
         try {
-          const { data: adminRole } = await supabase
-            .from('school_operator_roles')
-            .select('operator_role')
-            .eq('user_id', userId)
-            .eq('is_active', true)
-            .eq('operator_role', 'Admin')
-            .maybeSingle();
+          const { data: isAdmin } = await supabase.rpc('has_school_operator_role', {
+            p_user_id: userId,
+            p_role: 'Admin',
+          });
 
-          if (adminRole) {
+          if (isAdmin) {
             personRole = 'Admin';
             console.log('✅ User has Admin role');
           } else {
-            // Fetch person_type from person_registry
-            const { data: personRecord } = await supabase
-              .from('person_registry')
-              .select('person_type')
-              .eq('id', authUser.person_id)
-              .maybeSingle();
+            const { data: isOfficer } = await supabase.rpc('has_school_operator_role', {
+              p_user_id: userId,
+              p_role: 'Officer',
+            });
 
-            if (personRecord?.person_type) {
-              personRole = personRecord.person_type as User['role'];
-              console.log('✅ Person type from registry:', personRole);
+            if (isOfficer) {
+              personRole = 'Officer';
+              console.log('✅ User has Officer role');
+            } else {
+              // Fetch person_type from person_registry
+              const { data: personRecord } = await supabase
+                .from('person_registry')
+                .select('person_type')
+                .eq('id', authUser.person_id)
+                .maybeSingle();
+
+              if (personRecord?.person_type) {
+                personRole = personRecord.person_type as User['role'];
+                console.log('✅ Person type from registry:', personRole);
+              }
             }
           }
         } catch (roleError) {
-          console.warn('⚠️ Could not fetch role, defaulting to Taker:', roleError);
+          console.warn('⚠️ Could not fetch role, defaulting to Officer:', roleError);
         }
 
         console.log('✅ User verified in auth_users');
