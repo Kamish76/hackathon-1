@@ -2,7 +2,6 @@ import {
   Users, 
   UserCheck, 
   UserX, 
-  Car, 
   Activity, 
   AlertTriangle,
   TrendingUp,
@@ -31,21 +30,17 @@ export default function AdminDashboard() {
         
         <nav className="flex-1 p-4">
           <div className="space-y-1">
-            <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#f1f5f9] text-[#1e293b] font-medium">
+            <a href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#f1f5f9] text-[#1e293b] font-medium">
               <BarChart3 className="w-5 h-5" />
               Dashboard
             </a>
-            <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
+            <a href="/people" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
               <Users className="w-5 h-5" />
               People
             </a>
-            <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
+            <a href="/events" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
               <Activity className="w-5 h-5" />
               Access Events
-            </a>
-            <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
-              <Car className="w-5 h-5" />
-              Vehicles
             </a>
             <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1e293b] transition-colors">
               <Settings className="w-5 h-5" />
@@ -201,10 +196,6 @@ export default function AdminDashboard() {
                 <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-[#e2e8f0] text-[#0f172a] hover:bg-[#f8f9fa] transition-colors">
                   <Activity className="w-5 h-5" />
                   <span className="text-sm font-medium">View Reports</span>
-                </button>
-                <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-[#e2e8f0] text-[#0f172a] hover:bg-[#f8f9fa] transition-colors">
-                  <Car className="w-5 h-5" />
-                  <span className="text-sm font-medium">Vehicle Session</span>
                 </button>
               </div>
 
