@@ -264,7 +264,10 @@ export default function MemberProfile() {
         setIdStatus({
           account: person.is_active ? "ACTIVE" : "INACTIVE",
           validThru: "N/A",
-          clearance: person.person_type || "Member",
+          clearance:
+            (person.person_type || "").toLowerCase() === "staff"
+              ? "Staff"
+              : "Student",
         });
 
         setEmergencyInfo({
