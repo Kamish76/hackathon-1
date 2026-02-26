@@ -248,21 +248,6 @@ export default function LoginPage() {
               </button>
             </form>
 
-            {/* Demo Credentials */}
-            <div className="mt-6 pt-6 border-t border-[#e2e8f0]">
-              <p className="text-xs text-[#64748b] text-center mb-3">Demo Credentials:</p>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between p-2 bg-[#f8f9fa] rounded">
-                  <span className="text-[#64748b]">Admin:</span>
-                  <span className="font-mono text-[#0f172a]">admin@school.edu / admin123</span>
-                </div>
-                <div className="flex justify-between p-2 bg-[#f8f9fa] rounded">
-                  <span className="text-[#64748b]">Taker:</span>
-                  <span className="font-mono text-[#0f172a]">taker@school.edu / taker123</span>
-                </div>
-              </div>
-            </div>
-
             {/* Sign Up Link */}
             <div className="mt-6 pt-6 border-t border-[#e2e8f0] text-center">
               <p className="text-sm text-[#64748b]">
