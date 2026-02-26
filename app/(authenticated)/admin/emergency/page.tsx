@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   AlertTriangle, CheckCircle2, XCircle, HelpCircle,
-  Clock, Users, PhoneCall, Siren,
+  Clock, Users, PhoneCall, Siren, ArrowLeft, BarChart3, LogIn, LogOut,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminSidebar from '@/components/AdminSidebar';
@@ -39,10 +39,40 @@ interface RollCallEntry {
 
 type PersonTypeFilter = 'All' | 'Student' | 'Staff' | 'Visitor' | 'Special Guest';
 
+interface SessionDetailEntry {
+  person_id: string;
+  status: 'UNKNOWN' | 'ACCOUNTED' | 'MISSING';
+  last_updated_at: string;
+  person_registry: {
+    full_name: string;
+    person_type: string;
+    emergency_contact_name: string | null;
+    emergency_contact_phone: string | null;
+  };
+  gates?: { gate_name: string } | null;
+}
+
+interface SessionAccessEvent {
+  id: string;
+  direction: string;
+  event_timestamp: string;
+  verification_method: string;
+  person_registry: { full_name: string; person_type: string } | null;
+  gates: { gate_name: string } | null;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function elapsed(from: string) {
   const diff = Math.floor((Date.now() - new Date(from).getTime()) / 1000);
+  if (diff < 60) return `${diff}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ${diff % 60}s`;
+  return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
+}
+
+function duration(from: string, to: string | null) {
+  if (!to) return 'Ongoing';
+  const diff = Math.floor((new Date(to).getTime() - new Date(from).getTime()) / 1000);
   if (diff < 60) return `${diff}s`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ${diff % 60}s`;
   return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
@@ -78,7 +108,48 @@ export default function EmergencyPage() {
   const [notes, setNotes] = useState('');
   const [pastSessions, setPastSessions] = useState<EmergencySession[]>([]);
 
-  // ── Fetch active session ──────────────────────────────────────────────────
+  // Session detail (past session analytics)
+  const [selectedPastSession, setSelectedPastSession] = useState<EmergencySession | null>(null);
+  const [detailRollCall, setDetailRollCall] = useState<SessionDetailEntry[]>([]);
+  const [detailEvents, setDetailEvents] = useState<SessionAccessEvent[]>([]);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // ── Open past session detail ───────────────────────────────────────────────────
+  const openSessionDetail = useCallback(async (s: EmergencySession) => {
+    setSelectedPastSession(s);
+    setLoadingDetail(true);
+    const end = s.resolved_at ?? new Date().toISOString();
+
+    const [rollCallRes, eventsRes] = await Promise.all([
+      supabase
+        .from('emergency_roll_call')
+        .select(`
+          person_id, status, last_updated_at,
+          person_registry ( full_name, person_type, emergency_contact_name, emergency_contact_phone ),
+          gates ( gate_name )
+        `)
+        .eq('session_id', s.id)
+        .order('status')
+        .order('person_registry(full_name)'),
+      supabase
+        .from('access_events')
+        .select(`
+          id, direction, event_timestamp, verification_method,
+          person_registry!inner ( full_name, person_type ),
+          gates!inner ( gate_name )
+        `)
+        .gte('event_timestamp', s.triggered_at)
+        .lte('event_timestamp', end)
+        .order('event_timestamp', { ascending: true })
+        .limit(300),
+    ]);
+
+    setDetailRollCall((rollCallRes.data ?? []) as unknown as SessionDetailEntry[]);
+    setDetailEvents((eventsRes.data ?? []) as unknown as SessionAccessEvent[]);
+    setLoadingDetail(false);
+  }, [supabase]);
+
+  // ── Fetch active session ──────────────────────────────────────────────────────
   const fetchSession = useCallback(async () => {
     const { data } = await supabase
       .from('emergency_sessions')
@@ -315,6 +386,19 @@ export default function EmergencyPage() {
 
           {loading ? (
             <div className="flex items-center justify-center h-48 text-[#94a3b8]">Loading…</div>
+          ) : selectedPastSession ? (
+            /* ── PAST SESSION DETAIL VIEW ── */
+            <SessionDetail
+              session={selectedPastSession}
+              rollCall={detailRollCall}
+              events={detailEvents}
+              loading={loadingDetail}
+              onBack={() => {
+                setSelectedPastSession(null);
+                setDetailRollCall([]);
+                setDetailEvents([]);
+              }}
+            />
           ) : session ? (
             <>
               {/* ── Summary strip ── */}
@@ -510,30 +594,38 @@ export default function EmergencyPage() {
               {/* ── Past sessions ── */}
               {pastSessions.length > 0 && (
                 <div className="mt-10">
-                  <h3 className="text-lg font-semibold text-[#0f172a] mb-4">Past Sessions</h3>
+                  <h3 className="text-lg font-semibold text-[#0f172a] mb-4 flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-[#64748b]" />
+                    Past Sessions
+                  </h3>
                   <div className="bg-white rounded-xl border border-[#e2e8f0] overflow-hidden shadow-sm">
                     <div className="divide-y divide-[#e2e8f0]">
                       {pastSessions.map((s) => (
-                        <div key={s.id} className="flex items-center justify-between px-5 py-4 text-sm">
+                        <button
+                          key={s.id}
+                          onClick={() => openSessionDetail(s)}
+                          className="w-full flex items-center justify-between px-5 py-4 text-sm text-left hover:bg-[#f8f9fa] transition-colors group"
+                        >
                           <div>
-                            <p className="font-medium text-[#0f172a]">
+                            <p className="font-medium text-[#0f172a] group-hover:text-[#2563eb] transition-colors">
                               {new Date(s.triggered_at).toLocaleString()}
                             </p>
                             {s.notes && <p className="text-[#64748b] text-xs mt-0.5">{s.notes}</p>}
                           </div>
-                          <div className="text-right">
-                            {s.resolved_at ? (
-                              <span className="text-xs text-[#16a34a] font-medium">Resolved</span>
-                            ) : (
-                              <span className="text-xs text-[#f59e0b] font-medium">Unresolved</span>
-                            )}
-                            {s.resolved_at && (
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              {s.resolved_at ? (
+                                <span className="text-xs text-[#16a34a] font-medium">Resolved</span>
+                              ) : (
+                                <span className="text-xs text-[#f59e0b] font-medium">Unresolved</span>
+                              )}
                               <p className="text-xs text-[#94a3b8] mt-0.5">
-                                {elapsed(s.triggered_at)} duration
+                                {duration(s.triggered_at, s.resolved_at)}
                               </p>
-                            )}
+                            </div>
+                            <ArrowLeft className="w-4 h-4 text-[#cbd5e1] group-hover:text-[#2563eb] rotate-180 transition-colors" />
                           </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -543,6 +635,350 @@ export default function EmergencyPage() {
           )}
         </div>
       </main>
+    </div>
+  );
+}
+
+// ─── Session Detail Analytics View ────────────────────────────────────────────
+
+const PERSON_TYPES = ['Student', 'Staff', 'Visitor', 'Special Guest'] as const;
+
+function SessionDetail({
+  session,
+  rollCall,
+  events,
+  loading,
+  onBack,
+}: {
+  session: EmergencySession;
+  rollCall: SessionDetailEntry[];
+  events: SessionAccessEvent[];
+  loading: boolean;
+  onBack: () => void;
+}) {
+  const total = rollCall.length;
+  const accounted = rollCall.filter((e) => e.status === 'ACCOUNTED').length;
+  const missing = rollCall.filter((e) => e.status === 'MISSING').length;
+  const unknown = rollCall.filter((e) => e.status === 'UNKNOWN').length;
+
+  const totalDuration = duration(session.triggered_at, session.resolved_at);
+
+  // Entries / exits that happened during the session window
+  const entriesDuring = events.filter((e) => e.direction === 'IN');
+  const exitsDuring = events.filter((e) => e.direction === 'OUT');
+
+  // Roll call snapshot person ids
+  const snapshotIds = new Set(rollCall.map((e) => e.person_id));
+
+  // New arrivals = entered after declaration and were NOT in initial snapshot
+  const newArrivals = entriesDuring.filter(
+    (e) => e.person_registry && !snapshotIds.has((e as unknown as { person_id?: string }).person_id ?? '')
+  );
+
+  // Per-type breakdown
+  const typeBreakdown = PERSON_TYPES.map((type) => {
+    const rows = rollCall.filter((e) => e.person_registry.person_type === type);
+    return {
+      type,
+      total: rows.length,
+      accounted: rows.filter((e) => e.status === 'ACCOUNTED').length,
+      missing: rows.filter((e) => e.status === 'MISSING').length,
+      unknown: rows.filter((e) => e.status === 'UNKNOWN').length,
+    };
+  }).filter((t) => t.total > 0);
+
+  // Timeline items
+  const timeline: { time: string; label: string; color: string }[] = [
+    {
+      time: new Date(session.triggered_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      label: 'Emergency Declared',
+      color: 'bg-[#dc2626]',
+    },
+  ];
+  const firstAccounted = [...rollCall]
+    .filter((e) => e.status === 'ACCOUNTED')
+    .sort((a, b) => new Date(a.last_updated_at).getTime() - new Date(b.last_updated_at).getTime())[0];
+  if (firstAccounted) {
+    timeline.push({
+      time: new Date(firstAccounted.last_updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      label: `First person accounted — ${firstAccounted.person_registry.full_name}`,
+      color: 'bg-[#16a34a]',
+    });
+  }
+  if (total > 0 && accounted === total) {
+    const lastAccounted = [...rollCall]
+      .filter((e) => e.status === 'ACCOUNTED')
+      .sort((a, b) => new Date(b.last_updated_at).getTime() - new Date(a.last_updated_at).getTime())[0];
+    if (lastAccounted) {
+      timeline.push({
+        time: new Date(lastAccounted.last_updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        label: 'All persons accounted for',
+        color: 'bg-[#16a34a]',
+      });
+    }
+  }
+  if (session.resolved_at) {
+    timeline.push({
+      time: new Date(session.resolved_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      label: 'Emergency Resolved',
+      color: 'bg-[#64748b]',
+    });
+  }
+
+  return (
+    <div>
+      {/* Back button + header */}
+      <div className="flex items-center gap-4 mb-6">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#e2e8f0] text-[#64748b] text-sm hover:bg-[#f1f5f9] transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </button>
+        <div>
+          <h3 className="text-xl font-bold text-[#0f172a]">
+            Session — {new Date(session.triggered_at).toLocaleDateString([], {
+              weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+            })}
+          </h3>
+          <p className="text-sm text-[#64748b]">
+            {new Date(session.triggered_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {session.resolved_at && ` → ${new Date(session.resolved_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+            {' · '}{totalDuration}
+            {session.notes && ` · "${session.notes}"`}
+          </p>
+        </div>
+        <span className={`ml-auto px-3 py-1 rounded-full text-xs font-semibold ${session.resolved_at ? 'bg-[#dcfce7] text-[#16a34a]' : 'bg-[#fef3c7] text-[#f59e0b]'}`}>
+          {session.resolved_at ? 'Resolved' : 'Unresolved'}
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-48 text-[#94a3b8]">Loading analytics…</div>
+      ) : (
+        <div className="space-y-6">
+
+          {/* ── Outcome summary ── */}
+          <div className="grid grid-cols-4 gap-4">
+            {[
+              { label: 'Total Inside', value: total,     bg: 'bg-white',       text: 'text-[#0f172a]', icon: <Users className="w-5 h-5 text-[#64748b]" /> },
+              { label: 'Accounted',    value: accounted, bg: 'bg-[#dcfce7]',  text: 'text-[#16a34a]', icon: <CheckCircle2 className="w-5 h-5 text-[#16a34a]" /> },
+              { label: 'Missing',      value: missing,   bg: 'bg-[#fef2f2]',  text: 'text-[#dc2626]', icon: <XCircle className="w-5 h-5 text-[#dc2626]" /> },
+              { label: 'Unknown',      value: unknown,   bg: 'bg-[#f1f5f9]',  text: 'text-[#64748b]', icon: <HelpCircle className="w-5 h-5 text-[#94a3b8]" /> },
+            ].map((s) => (
+              <div key={s.label} className={`${s.bg} rounded-xl border border-[#e2e8f0] p-5 flex items-center gap-4 shadow-sm`}>
+                {s.icon}
+                <div>
+                  <p className={`text-2xl font-bold ${s.text}`}>{s.value}</p>
+                  <p className="text-xs text-[#64748b]">{s.label}</p>
+                  {total > 0 && (
+                    <p className="text-xs text-[#94a3b8]">
+                      {Math.round((s.value / total) * 100)}%
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-6">
+
+            {/* ── Person-type breakdown ── */}
+            {typeBreakdown.length > 0 && (
+              <div className="bg-white rounded-xl border border-[#e2e8f0] p-5 shadow-sm">
+                <h4 className="text-sm font-semibold text-[#0f172a] mb-4 flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-[#64748b]" />
+                  Breakdown by Person Type
+                </h4>
+                <div className="space-y-4">
+                  {typeBreakdown.map((t) => (
+                    <div key={t.type}>
+                      <div className="flex items-center justify-between mb-1.5 text-xs">
+                        <span className="font-medium text-[#0f172a]">{t.type}</span>
+                        <span className="text-[#64748b]">
+                          {t.total} total · {t.accounted} accounted · {t.missing} missing
+                        </span>
+                      </div>
+                      {/* Stacked bar: green=accounted, red=missing, grey=unknown */}
+                      <div className="flex h-3 rounded-full overflow-hidden bg-[#f1f5f9]">
+                        {t.accounted > 0 && (
+                          <div
+                            className="bg-[#16a34a] h-full transition-all"
+                            style={{ width: `${(t.accounted / t.total) * 100}%` }}
+                          />
+                        )}
+                        {t.missing > 0 && (
+                          <div
+                            className="bg-[#dc2626] h-full transition-all"
+                            style={{ width: `${(t.missing / t.total) * 100}%` }}
+                          />
+                        )}
+                        {t.unknown > 0 && (
+                          <div
+                            className="bg-[#cbd5e1] h-full transition-all"
+                            style={{ width: `${(t.unknown / t.total) * 100}%` }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {/* Legend */}
+                  <div className="flex items-center gap-4 pt-1">
+                    {[
+                      { color: 'bg-[#16a34a]', label: 'Accounted' },
+                      { color: 'bg-[#dc2626]', label: 'Missing' },
+                      { color: 'bg-[#cbd5e1]', label: 'Unknown' },
+                    ].map((l) => (
+                      <div key={l.label} className="flex items-center gap-1.5 text-xs text-[#64748b]">
+                        <div className={`w-2.5 h-2.5 rounded-full ${l.color}`} />
+                        {l.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Timeline ── */}
+            <div className="bg-white rounded-xl border border-[#e2e8f0] p-5 shadow-sm">
+              <h4 className="text-sm font-semibold text-[#0f172a] mb-4 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-[#64748b]" />
+                Timeline
+              </h4>
+              <div className="relative space-y-0">
+                {timeline.map((item, i) => (
+                  <div key={i} className="flex items-start gap-3 relative">
+                    {/* Vertical line */}
+                    {i < timeline.length - 1 && (
+                      <div className="absolute left-1.5 top-4 w-0.5 h-full bg-[#e2e8f0]" />
+                    )}
+                    <div className={`w-4 h-4 rounded-full ${item.color} shrink-0 mt-0.5 z-10`} />
+                    <div className="pb-4">
+                      <p className="text-xs font-semibold text-[#0f172a]">{item.label}</p>
+                      <p className="text-xs text-[#94a3b8]">{item.time}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Movement during emergency ── */}
+          {events.length > 0 && (
+            <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-[#e2e8f0] flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-[#0f172a] flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-[#64748b]" />
+                  Movement During Emergency
+                </h4>
+                <div className="flex items-center gap-4 text-xs text-[#64748b]">
+                  <span className="flex items-center gap-1">
+                    <LogIn className="w-3.5 h-3.5 text-[#16a34a]" />
+                    {entriesDuring.length} entries
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <LogOut className="w-3.5 h-3.5 text-[#f59e0b]" />
+                    {exitsDuring.length} exits
+                  </span>
+                  {newArrivals.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-[#fef3c7] text-[#f59e0b] font-medium">
+                      {newArrivals.length} new arrivals
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="divide-y divide-[#e2e8f0] max-h-64 overflow-y-auto">
+                {events.map((ev) => (
+                  <div key={ev.id} className="flex items-center gap-4 px-5 py-3">
+                    <div className={`flex items-center justify-center w-7 h-7 rounded-full shrink-0 ${
+                      ev.direction === 'IN' ? 'bg-[#dcfce7]' : 'bg-[#fef3c7]'
+                    }`}>
+                      {ev.direction === 'IN'
+                        ? <LogIn className="w-3.5 h-3.5 text-[#16a34a]" />
+                        : <LogOut className="w-3.5 h-3.5 text-[#f59e0b]" />
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#0f172a] truncate">
+                        {ev.person_registry?.full_name ?? '—'}
+                      </p>
+                      <p className="text-xs text-[#64748b]">
+                        {ev.person_registry?.person_type ?? '—'} · {ev.gates?.gate_name ?? '—'} · {ev.verification_method}
+                      </p>
+                    </div>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
+                      ev.direction === 'IN' ? 'bg-[#dcfce7] text-[#16a34a]' : 'bg-[#fef3c7] text-[#f59e0b]'
+                    }`}>
+                      {ev.direction}
+                    </span>
+                    <span className="text-xs text-[#94a3b8] shrink-0">
+                      {new Date(ev.event_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Full roster ── */}
+          {rollCall.length > 0 && (
+            <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-[#e2e8f0]">
+                <h4 className="text-sm font-semibold text-[#0f172a]">Full Roll Call Roster</h4>
+                <p className="text-xs text-[#64748b] mt-0.5">
+                  Snapshot of everyone inside at time of declaration
+                </p>
+              </div>
+              <div className="divide-y divide-[#e2e8f0]">
+                {rollCall.map((entry, i) => (
+                  <div key={i} className="flex items-center gap-4 px-5 py-3.5">
+                    <StatusIcon status={entry.status} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#0f172a] truncate">
+                        {entry.person_registry.full_name}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5 text-xs text-[#64748b] flex-wrap">
+                        <span>{entry.person_registry.person_type}</span>
+                        {entry.gates?.gate_name && (
+                          <>
+                            <span className="text-[#cbd5e1]">·</span>
+                            <span>Last at {entry.gates.gate_name}</span>
+                          </>
+                        )}
+                        {entry.person_registry.emergency_contact_name && (
+                          <>
+                            <span className="text-[#cbd5e1]">·</span>
+                            <span className="flex items-center gap-1">
+                              <PhoneCall className="w-3 h-3" />
+                              {entry.person_registry.emergency_contact_name}
+                              {entry.person_registry.emergency_contact_phone && ` — ${entry.person_registry.emergency_contact_phone}`}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusBg(entry.status)}`}>
+                        {entry.status}
+                      </span>
+                      <p className="text-xs text-[#94a3b8] mt-1">
+                        {new Date(entry.last_updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {rollCall.length === 0 && events.length === 0 && (
+            <div className="bg-white rounded-xl border border-[#e2e8f0] p-12 text-center text-[#94a3b8] shadow-sm">
+              No data recorded for this session.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
