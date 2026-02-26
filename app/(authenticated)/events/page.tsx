@@ -3,7 +3,6 @@
 import { useState, useMemo } from 'react';
 import { Search, Filter, Calendar, Download, Shield, BarChart3, Users, Activity, Settings, LogOut, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface AccessEvent {
@@ -379,9 +378,5 @@ function AccessEventsContent() {
 }
 
 export default function AccessEvents() {
-  return (
-    <ProtectedRoute>
-      <AccessEventsContent />
-    </ProtectedRoute>
-  );
+  return <AccessEventsContent />;
 }

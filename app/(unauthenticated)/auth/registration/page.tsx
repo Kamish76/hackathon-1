@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Shield, Mail, Lock, AlertCircle, Eye, EyeOff, User, CheckCircle2 } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
 
 export default function RegistrationPage() {
   const [formData, setFormData] = useState({
@@ -19,14 +18,6 @@ export default function RegistrationPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const { user } = useAuth();
-
-  // Redirect if already logged in
-  useEffect(() => {
-    if (user) {
-      router.push('/dashboard');
-    }
-  }, [user, router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;

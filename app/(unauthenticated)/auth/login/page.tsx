@@ -14,14 +14,7 @@ export default function LoginPage() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, loginWithGoogle, user } = useAuth();
-
-  // Redirect if already logged in
-  useEffect(() => {
-    if (user) {
-      router.push('/dashboard');
-    }
-  }, [user, router]);
+  const { login, loginWithGoogle } = useAuth();
 
   useEffect(() => {
     if (searchParams.get('error') === 'oauth_failed') {
