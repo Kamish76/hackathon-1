@@ -9,7 +9,17 @@ export default function GuestRoute({ children }: { children: React.ReactNode }) 
   const router = useRouter();
 
   useEffect(() => {
+    console.log('[GuestRoute] State update', {
+      isLoading,
+      hasUser: Boolean(user),
+      userId: user?.id ?? null,
+      path: window.location.pathname,
+    });
+  }, [isLoading, user]);
+
+  useEffect(() => {
     if (!isLoading && user) {
+      console.log('[GuestRoute] Redirecting authenticated user to /admin/dashboard');
       router.push('/admin/dashboard');
     }
   }, [user, isLoading, router]);
