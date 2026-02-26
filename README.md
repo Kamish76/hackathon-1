@@ -42,7 +42,10 @@ npm install @supabase/supabase-js @supabase/ssr
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
 ```
+
+`SUPABASE_SERVICE_ROLE_KEY` is required for admin member management actions (deactivate and permanent account deletion). Keep it server-only and never expose it to client components.
 
 3. Use the initialized clients:
 
