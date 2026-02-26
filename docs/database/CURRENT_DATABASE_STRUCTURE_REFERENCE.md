@@ -377,6 +377,10 @@ Explicit officer policies (added by migration 05):
 - `"Officers can insert access_events"` — INSERT on `access_events` WITH CHECK for Officer or Admin role
 - `"Officers can select access_events"` — SELECT on `access_events` USING for Officer or Admin role
 
+Explicit admin gate policies (added by migration 06):
+- `"Admins can insert gates"` — INSERT on `gates` WITH CHECK for Admin role
+- `"Admins can update gates"` — UPDATE on `gates` USING for Admin role (used to toggle `is_active` and manage gate metadata)
+
 ## 9) Seed Data
 Default gates inserted idempotently:
 - `GATE-01` Main Gate (pedestrian)
@@ -392,6 +396,7 @@ Default gates inserted idempotently:
 | 04 | `04_fix_officer_rpc_taker_compat.sql` | Patches `has_school_operator_role` so the `Officer` role check also matches legacy `'Taker'` rows (backward compatibility for accounts not yet migrated by 03). Safe to run multiple times. |
 | 05 | `05_fix_rls_taker_role_alias.sql` | Recreates `has_school_operator_role` so both `'Officer'` and `'Taker'` role checks accept `IN ('Officer','Taker','Admin')`. Adds four explicit RLS policies: `Officers can select person_registry`, `Officers can select gates`, `Officers can insert access_events`, `Officers can select access_events`. These unlock the officer scan/attendance/feed pages end-to-end. |
 | 05 | `05_fix_rls_taker_role_alias.sql` | Re-applies `has_school_operator_role` so that `p_role IN ('Officer','Taker')` both resolve correctly. Fixes the RLS policy `person_registry_select_operator` (and similar policies on other tables) which pass `p_role='Taker'` — after migration 03 these returned `false` for everyone, hiding all rows. |
+| 06 | `06_admin_gates_rls.sql` | Adds two admin-only RLS policies on `public.gates`: `Admins can insert gates` (INSERT WITH CHECK) and `Admins can update gates` (UPDATE USING). Unlocks the admin Gates management page — admins can add new gates and toggle `is_active`. |
 
 ## 11) Operational Notes
 - Script is additive and designed to be idempotent.
