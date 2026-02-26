@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Shield, Mail, Lock, AlertCircle, Eye, EyeOff, User, CheckCircle2 } from 'lucide-react';
+import { Shield, Mail, Lock, AlertCircle, Eye, EyeOff, User, CheckCircle2, Wifi, ScanLine, Users, BarChart3, ShieldCheck, Server } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function RegistrationPage() {
@@ -128,57 +128,135 @@ export default function RegistrationPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#f8f9fa]">
+    <div className="flex h-screen overflow-hidden bg-[#f8f9fa]">
       {/* Left side - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-[#1e293b] flex-col justify-between p-12">
-        <div className="flex items-center gap-3">
-          <Shield className="w-10 h-10 text-white" />
+      <div className="hidden lg:flex lg:w-[50%] relative flex-col justify-between p-12 overflow-hidden bg-[#0f172a]">
+
+        {/* Background layers */}
+        <div className="absolute inset-0 bg-linear-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a]" />
+
+        {/* Dot-grid overlay */}
+        <div
+          className="absolute inset-0 opacity-[0.07]"
+          style={{
+            backgroundImage: 'radial-gradient(circle, #94a3b8 1px, transparent 1px)',
+            backgroundSize: '28px 28px',
+          }}
+        />
+
+        {/* Accent glow blobs */}
+        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-[#3b82f6] opacity-10 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-80 h-80 rounded-full bg-[#10b981] opacity-10 blur-3xl pointer-events-none" />
+
+        {/* ── TOP: Logo ── */}
+        <div className="relative z-10 flex items-center gap-3">
+          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-white/10 border border-white/20">
+            <Shield className="w-6 h-6 text-white" />
+          </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">NFC Access Control</h1>
-            <p className="text-[#94a3b8] text-sm">School-wide Ingress/Egress System</p>
+            <h1 className="text-xl font-bold text-white leading-tight">NFC Access Control</h1>
+            <p className="text-[#64748b] text-xs">School-wide Ingress/Egress System</p>
           </div>
         </div>
 
-        <div>
-          <h2 className="text-3xl font-bold text-white mb-4">
-            Join Our System
-          </h2>
-          <p className="text-[#cbd5e1] text-lg mb-8">
-            Get started with secure NFC-based access control and real-time tracking.
-          </p>
-          <div className="space-y-4">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-[#10b981] shrink-0 mt-0.5" />
-              <div>
-                <p className="text-white font-medium">Quick Registration</p>
-                <p className="text-[#94a3b8] text-sm">Create your account in just a few steps</p>
-              </div>
+        {/* ── MIDDLE: Headline + stats + cards ── */}
+        <div className="relative z-10 space-y-7 flex flex-col items-center text-center">
+
+          {/* Headline */}
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#10b981]/10 border border-[#10b981]/30 mb-4">
+              <Wifi className="w-3.5 h-3.5 text-[#10b981]" />
+              <span className="text-[#10b981] text-xs font-medium tracking-wide uppercase">Live System</span>
             </div>
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-[#10b981] shrink-0 mt-0.5" />
-              <div>
-                <p className="text-white font-medium">Secure Access</p>
-                <p className="text-[#94a3b8] text-sm">Your data is protected with industry standards</p>
+            <h2 className="text-4xl font-bold text-white leading-tight mb-3">
+              Secure Access,<br />
+              <span className="text-transparent bg-clip-text bg-linear-to-r from-[#38bdf8] to-[#10b981]">
+                Instantly Managed
+              </span>
+            </h2>
+            <p className="text-[#94a3b8] text-sm leading-relaxed">
+              Real-time NFC scanning for every gate — track student, staff, and visitor movement across your campus.
+            </p>
+          </div>
+
+          {/* Stat strip */}
+          <div className="grid grid-cols-3 gap-3 w-full">
+            {[
+              { value: '500+', label: 'Students tracked' },
+              { value: '99.9%', label: 'Scan accuracy' },
+              { value: '<1s', label: 'Response time' },
+            ].map((s, i) => (
+              <div key={i} className="flex flex-col items-center justify-center py-3 px-2 rounded-xl bg-white/5 border border-white/10 text-center">
+                <span className="text-white text-xl font-bold leading-none">{s.value}</span>
+                <span className="text-[#64748b] text-xs mt-1 leading-tight">{s.label}</span>
               </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-[#10b981] shrink-0 mt-0.5" />
-              <div>
-                <p className="text-white font-medium">Instant Access</p>
-                <p className="text-[#94a3b8] text-sm">Start using the system immediately after registration</p>
+            ))}
+          </div>
+
+          {/* Feature cards — 2-column grid */}
+          <div className="grid grid-cols-2 gap-3 w-full">
+            {[
+              {
+                icon: <ScanLine className="w-4 h-4 text-[#38bdf8]" />,
+                bg: 'bg-[#38bdf8]/10',
+                title: 'NFC & QR Scanning',
+                desc: 'Sub-second reads at every gate.',
+              },
+              {
+                icon: <Users className="w-4 h-4 text-[#a78bfa]" />,
+                bg: 'bg-[#a78bfa]/10',
+                title: 'Role-Based Access',
+                desc: 'Admin & Officer portals.',
+              },
+              {
+                icon: <BarChart3 className="w-4 h-4 text-[#10b981]" />,
+                bg: 'bg-[#10b981]/10',
+                title: 'Reports & Exports',
+                desc: 'Daily logs and CSV exports.',
+              },
+              {
+                icon: <ShieldCheck className="w-4 h-4 text-[#fb923c]" />,
+                bg: 'bg-[#fb923c]/10',
+                title: 'Anti-Passback',
+                desc: 'Prevents duplicate entries.',
+              },
+            ].map((f, i) => (
+              <div key={i} className="flex flex-col items-center gap-2.5 px-4 py-3.5 rounded-xl bg-white/5 border border-white/10 text-center">
+                <div className={`w-8 h-8 rounded-lg ${f.bg} flex items-center justify-center`}>
+                  {f.icon}
+                </div>
+                <div>
+                  <p className="text-white text-xs font-semibold">{f.title}</p>
+                  <p className="text-[#475569] text-xs leading-relaxed mt-0.5">{f.desc}</p>
+                </div>
               </div>
-            </div>
+            ))}
           </div>
         </div>
 
-        <div className="text-[#64748b] text-sm">
+        {/* ── BOTTOM: copyright ── */}
+        <div className="relative z-10 text-[#334155] text-xs text-center">
           © 2026 NFC Access Control System. All rights reserved.
         </div>
       </div>
 
       {/* Right side - Registration Form */}
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="w-full max-w-md">
+      <div className="flex-1 relative">
+        {/* Subtle background — stays fixed while form scrolls */}
+        <div
+          className="absolute inset-0 opacity-[0.4]"
+          style={{
+            backgroundImage: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+          }}
+        />
+        <div className="absolute top-0 right-0 w-96 h-96 rounded-full bg-[#e0f2fe] opacity-40 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-72 h-72 rounded-full bg-[#d1fae5] opacity-30 blur-3xl pointer-events-none" />
+
+        {/* Scrollable layer */}
+        <div className="absolute inset-0 overflow-y-auto">
+          <div className="min-h-full flex items-center justify-center p-8">
+        <div className="relative z-10 w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center gap-2 mb-8">
             <Shield className="w-8 h-8 text-[#1e293b]" />
@@ -396,9 +474,27 @@ export default function RegistrationPage() {
             </div>
           </div>
 
-          <p className="text-center text-sm text-[#64748b] mt-6">
+          {/* Trust badges */}
+          <div className="mt-6 flex items-center justify-center gap-5 flex-wrap">
+            <div className="flex items-center gap-1.5 text-[#94a3b8] text-xs">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Encrypted</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[#94a3b8] text-xs">
+              <Lock className="w-3.5 h-3.5" />
+              <span>Role-secured</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[#94a3b8] text-xs">
+              <Server className="w-3.5 h-3.5" />
+              <span>Hosted on Supabase</span>
+            </div>
+          </div>
+
+          <p className="text-center text-xs text-[#cbd5e1] mt-4">
             Need help? Contact your system administrator
           </p>
+        </div>
+          </div>
         </div>
       </div>
     </div>
