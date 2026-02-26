@@ -46,7 +46,7 @@ $$;
 -- --------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.person_registry (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  linked_user_id uuid NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  linked_user_id uuid NULL,
   person_type text NOT NULL CHECK (person_type IN ('Student', 'Staff', 'Visitor', 'Special Guest')),
   full_name text NOT NULL,
   email text NULL,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS public.person_registry (
   nfc_tag_id text NULL,
   qr_code_data text NULL,
   is_active boolean NOT NULL DEFAULT true,
-  created_by uuid NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  created_by uuid NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT uq_person_registry_external_identifier UNIQUE (external_identifier),
@@ -68,10 +68,10 @@ CREATE INDEX IF NOT EXISTS idx_person_registry_is_active ON public.person_regist
 
 CREATE TABLE IF NOT EXISTS public.school_operator_roles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL,
   operator_role text NOT NULL CHECK (operator_role IN ('Admin', 'Taker')),
   is_active boolean NOT NULL DEFAULT true,
-  assigned_by uuid NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  assigned_by uuid NULL,
   assigned_at timestamptz NOT NULL DEFAULT now(),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -135,8 +135,8 @@ CREATE TABLE IF NOT EXISTS public.vehicle_sessions (
   session_started_at timestamptz NOT NULL DEFAULT now(),
   session_closed_at timestamptz NULL,
   status text NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED', 'CANCELLED')),
-  opened_by uuid NULL REFERENCES public.users(id) ON DELETE SET NULL,
-  closed_by uuid NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  opened_by uuid NULL,
+  closed_by uuid NULL,
   notes text NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS public.access_events (
   entry_mode text NOT NULL DEFAULT 'WALK' CHECK (entry_mode IN ('WALK', 'VEHICLE')),
   verification_method text NOT NULL CHECK (verification_method IN ('NFC', 'QR', 'MANUAL_OVERRIDE', 'MANIFEST')),
   event_timestamp timestamptz NOT NULL DEFAULT now(),
-  operator_user_id uuid NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  operator_user_id uuid NULL,
   is_manual_override boolean NOT NULL DEFAULT false,
   override_reason text NULL,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS public.manifests (
   scheduled_date date NOT NULL,
   direction text NOT NULL CHECK (direction IN ('IN', 'OUT', 'BOTH')),
   status text NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'ACTIVE', 'CLOSED', 'CANCELLED')),
-  created_by uuid NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  created_by uuid NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -222,11 +222,65 @@ CREATE INDEX IF NOT EXISTS idx_manifest_entries_person_id ON public.manifest_ent
 CREATE TABLE IF NOT EXISTS public.override_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   access_event_id uuid NOT NULL REFERENCES public.access_events(id) ON DELETE CASCADE,
-  operator_user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE RESTRICT,
+  operator_user_id uuid NOT NULL,
   reason text NOT NULL,
-  approved_by uuid NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  approved_by uuid NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- --------------------------------------------------------------------------
+-- OPTIONAL USER FOREIGN KEYS (compat: public.users or auth.users)
+-- --------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_user_table regclass;
+BEGIN
+  v_user_table := COALESCE(to_regclass('public.users'), to_regclass('auth.users'));
+
+  IF v_user_table IS NULL THEN
+    RAISE NOTICE 'Skipping user foreign keys: neither public.users nor auth.users exists.';
+  ELSE
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_person_registry_linked_user') THEN
+      EXECUTE format('ALTER TABLE public.person_registry ADD CONSTRAINT fk_person_registry_linked_user FOREIGN KEY (linked_user_id) REFERENCES %s(id) ON DELETE SET NULL', v_user_table);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_person_registry_created_by') THEN
+      EXECUTE format('ALTER TABLE public.person_registry ADD CONSTRAINT fk_person_registry_created_by FOREIGN KEY (created_by) REFERENCES %s(id) ON DELETE SET NULL', v_user_table);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_school_operator_roles_user_id') THEN
+      EXECUTE format('ALTER TABLE public.school_operator_roles ADD CONSTRAINT fk_school_operator_roles_user_id FOREIGN KEY (user_id) REFERENCES %s(id) ON DELETE CASCADE', v_user_table);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_school_operator_roles_assigned_by') THEN
+      EXECUTE format('ALTER TABLE public.school_operator_roles ADD CONSTRAINT fk_school_operator_roles_assigned_by FOREIGN KEY (assigned_by) REFERENCES %s(id) ON DELETE SET NULL', v_user_table);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vehicle_sessions_opened_by') THEN
+      EXECUTE format('ALTER TABLE public.vehicle_sessions ADD CONSTRAINT fk_vehicle_sessions_opened_by FOREIGN KEY (opened_by) REFERENCES %s(id) ON DELETE SET NULL', v_user_table);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vehicle_sessions_closed_by') THEN
+      EXECUTE format('ALTER TABLE public.vehicle_sessions ADD CONSTRAINT fk_vehicle_sessions_closed_by FOREIGN KEY (closed_by) REFERENCES %s(id) ON DELETE SET NULL', v_user_table);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_access_events_operator_user_id') THEN
+      EXECUTE format('ALTER TABLE public.access_events ADD CONSTRAINT fk_access_events_operator_user_id FOREIGN KEY (operator_user_id) REFERENCES %s(id) ON DELETE SET NULL', v_user_table);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_manifests_created_by') THEN
+      EXECUTE format('ALTER TABLE public.manifests ADD CONSTRAINT fk_manifests_created_by FOREIGN KEY (created_by) REFERENCES %s(id) ON DELETE SET NULL', v_user_table);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_override_logs_operator_user_id') THEN
+      EXECUTE format('ALTER TABLE public.override_logs ADD CONSTRAINT fk_override_logs_operator_user_id FOREIGN KEY (operator_user_id) REFERENCES %s(id) ON DELETE RESTRICT', v_user_table);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_override_logs_approved_by') THEN
+      EXECUTE format('ALTER TABLE public.override_logs ADD CONSTRAINT fk_override_logs_approved_by FOREIGN KEY (approved_by) REFERENCES %s(id) ON DELETE SET NULL', v_user_table);
+    END IF;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_override_logs_access_event_id ON public.override_logs(access_event_id);
 CREATE INDEX IF NOT EXISTS idx_override_logs_operator_user_id ON public.override_logs(operator_user_id);
