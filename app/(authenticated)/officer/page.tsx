@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ScanLine, ClipboardCheck, Users, Activity, UserCheck, Clock, MapPin } from 'lucide-react';
+import { ScanLine, ClipboardCheck, Users, Activity, UserCheck, Clock, MapPin, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import OfficerSidebar from '@/components/OfficerSidebar';
 import { createClient } from '@/lib/supabase/client';
@@ -69,6 +69,70 @@ export default function OfficerPage() {
     lastScanTime: null,
   });
   const [loading, setLoading] = useState(true);
+
+  // Emergency state
+  const [emergencyActive, setEmergencyActive] = useState(false);
+  const [emergencySessionId, setEmergencySessionId] = useState<string | null>(null);
+  const [confirmEmergency, setConfirmEmergency] = useState(false);
+  const [declaringEmergency, setDeclaringEmergency] = useState(false);
+
+  useEffect(() => {
+    async function checkEmergency() {
+      const { data } = await supabase
+        .from('emergency_sessions')
+        .select('id')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+      setEmergencyActive(!!data);
+      setEmergencySessionId(data?.id ?? null);
+    }
+    checkEmergency();
+    const interval = setInterval(checkEmergency, 15_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function handleDeclareEmergency() {
+    if (!user || declaringEmergency) return;
+    setDeclaringEmergency(true);
+    const { data: sess } = await supabase
+      .from('emergency_sessions')
+      .insert({ triggered_by: user.id })
+      .select('id')
+      .single();
+    if (sess) {
+      // Snapshot current_population_inside → emergency_roll_call
+      const { data: insideRows } = await supabase
+        .from('current_population_inside')
+        .select('person_id');
+      const ids = (insideRows ?? []).map((r: { person_id: string }) => r.person_id);
+      if (ids.length > 0) {
+        const { data: lastEvents } = await supabase
+          .from('access_events')
+          .select('person_id, gate_id, event_timestamp')
+          .in('person_id', ids)
+          .order('event_timestamp', { ascending: false });
+        const gateMap = new Map<string, string>();
+        for (const ev of lastEvents ?? []) {
+          if (!gateMap.has(ev.person_id)) gateMap.set(ev.person_id, ev.gate_id);
+        }
+        await supabase.from('emergency_roll_call').insert(
+          ids.map((pid: string) => ({
+            session_id: sess.id,
+            person_id: pid,
+            status: 'UNKNOWN',
+            last_seen_gate_id: gateMap.get(pid) ?? null,
+            last_updated_by: user.id,
+            last_updated_at: new Date().toISOString(),
+          }))
+        );
+      }
+      setEmergencyActive(true);
+      setEmergencySessionId(sess.id);
+    }
+    setConfirmEmergency(false);
+    setDeclaringEmergency(false);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -153,6 +217,47 @@ export default function OfficerPage() {
 
       <main className="flex-1 overflow-auto">
         <div className="p-8">
+        {/* Emergency banner / trigger */}
+          {emergencyActive ? (
+            <div className="mb-6 flex items-center gap-3 px-5 py-3 rounded-xl bg-[#fef2f2] border border-[#fecaca]">
+              <AlertTriangle className="w-5 h-5 text-[#dc2626] animate-pulse shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-[#dc2626]">Emergency Active</p>
+                <p className="text-xs text-[#b91c1c]">An emergency has been declared. Roll call is in progress.</p>
+              </div>
+            </div>
+          ) : confirmEmergency ? (
+            <div className="mb-6 px-5 py-4 rounded-xl bg-[#fef2f2] border-2 border-[#dc2626]">
+              <p className="text-sm font-semibold text-[#0f172a] mb-1">Confirm Emergency Declaration</p>
+              <p className="text-xs text-[#64748b] mb-3">This will snapshot everyone currently inside and start a roll call. Use only in a genuine emergency.</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleDeclareEmergency}
+                  disabled={declaringEmergency}
+                  className="px-4 py-2 rounded-lg bg-[#dc2626] text-white text-sm font-semibold hover:bg-[#b91c1c] transition-colors disabled:opacity-60"
+                >
+                  {declaringEmergency ? 'Declaring…' : '🚨 Confirm Emergency'}
+                </button>
+                <button
+                  onClick={() => setConfirmEmergency(false)}
+                  className="px-4 py-2 rounded-lg border border-[#e2e8f0] text-[#64748b] text-sm hover:bg-[#f1f5f9] transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-6">
+              <button
+                onClick={() => setConfirmEmergency(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[#fecaca] text-[#dc2626] text-sm font-medium hover:bg-[#fef2f2] transition-colors"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                Declare Emergency
+              </button>
+            </div>
+          )}
+
           {/* Header */}
           <div className="mb-8">
             <h2 className="text-3xl font-bold text-[#0f172a] mb-2">
