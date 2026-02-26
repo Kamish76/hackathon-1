@@ -137,6 +137,16 @@ export default function MemberProfile() {
   const [isDetectingTag, setIsDetectingTag] = useState(false);
   const [isVerifyingCounterScan, setIsVerifyingCounterScan] = useState(false);
   const [lastScanResult, setLastScanResult] = useState<ScanVerificationResult | null>(null);
+  const [manualCounterInput, setManualCounterInput] = useState("0");
+  const [testerUrlValue, setTesterUrlValue] = useState("https://example.com/verify?cnt=0&code=TEST001");
+  const [isTesterReading, setIsTesterReading] = useState(false);
+  const [isTesterWriting, setIsTesterWriting] = useState(false);
+  const [testerReadResult, setTesterReadResult] = useState<{
+    serialNumber: string | null;
+    recordType: string | null;
+    mediaType: string | null;
+    payload: string | null;
+  } | null>(null);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
 
   const isVehicleTabDisabled = personTypeLabel === "Visitor" || personTypeLabel === "Special Guest";
@@ -157,6 +167,87 @@ export default function MemberProfile() {
       console.log("[MemberTagDebug]", message);
     }
   }, []);
+
+  const getNdefReaderCtor = useCallback(() => {
+    return (window as unknown as {
+      NDEFReader?: new () => {
+        scan: () => Promise<void>;
+        write?: (message: string | { records: Array<{ recordType: string; data: string }> }) => Promise<void>;
+        onreading:
+          | ((event: { serialNumber?: string; message?: { records?: Array<{ data?: BufferSource; recordType?: string; mediaType?: string }> } }) => void)
+          | null;
+        onreadingerror: ((event: unknown) => void) | null;
+      };
+    }).NDEFReader;
+  }, []);
+
+  const decodeRecordPayload = useCallback(
+    (record?: { data?: BufferSource; recordType?: string }) => {
+      if (!record?.data) {
+        return null;
+      }
+
+      let bytes: Uint8Array;
+      if (record.data instanceof ArrayBuffer) {
+        bytes = new Uint8Array(record.data);
+      } else if (ArrayBuffer.isView(record.data)) {
+        bytes = new Uint8Array(record.data.buffer, record.data.byteOffset, record.data.byteLength);
+      } else {
+        return null;
+      }
+
+      if (bytes.length === 0) {
+        return null;
+      }
+
+      if (record.recordType === "url") {
+        const uriPrefixes = [
+          "",
+          "http://www.",
+          "https://www.",
+          "http://",
+          "https://",
+        ];
+        const looksLikePrefixCode = bytes[0] <= 0x23;
+
+        if (looksLikePrefixCode) {
+          const prefix = uriPrefixes[bytes[0]] ?? "";
+          const suffix = new TextDecoder().decode(bytes.slice(1));
+          return `${prefix}${suffix}`;
+        }
+      }
+
+      return new TextDecoder().decode(bytes);
+    },
+    []
+  );
+
+  const submitCounterScan = useCallback(
+    async (uid: string | undefined, counter: number) => {
+      const response = await fetch("/api/member/tag/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uid,
+          counter,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok && response.status !== 409) {
+        setTagMessage(result?.error || "Counter scan verification failed.");
+        addDebugLog("verifyCounterScan:api-error", { status: response.status, result });
+        return;
+      }
+
+      setLastScanResult(result as ScanVerificationResult);
+      setTagMessage(result?.message || "Scan verified.");
+      addDebugLog("verifyCounterScan:api-success", { status: response.status, result });
+      await loadTagStatus();
+    },
+    [addDebugLog, loadTagStatus]
+  );
 
   const setProfileImageFromStorage = useCallback(async (userId: string) => {
     const { data, error } = await supabase.storage
@@ -370,13 +461,7 @@ export default function MemberProfile() {
   );
 
   const detectTagUidAutomatically = useCallback(async () => {
-    const ndefCtor = (window as unknown as {
-      NDEFReader?: new () => {
-        scan: () => Promise<void>;
-        onreading: ((event: { serialNumber?: string }) => void) | null;
-        onreadingerror: ((event: unknown) => void) | null;
-      };
-    }).NDEFReader;
+    const ndefCtor = getNdefReaderCtor();
 
     if (!ndefCtor) {
       setTagMessage("Web NFC is not supported on this browser/device.");
@@ -416,18 +501,10 @@ export default function MemberProfile() {
       addDebugLog("detectTagUidAutomatically:scan-start-error");
       setIsDetectingTag(false);
     }
-  }, [addDebugLog]);
+  }, [addDebugLog, getNdefReaderCtor]);
 
   const verifyCounterScan = useCallback(async () => {
-    const ndefCtor = (window as unknown as {
-      NDEFReader?: new () => {
-        scan: () => Promise<void>;
-        onreading:
-          | ((event: { serialNumber?: string; message?: { records?: Array<{ data?: BufferSource }> } }) => void)
-          | null;
-        onreadingerror: ((event: unknown) => void) | null;
-      };
-    }).NDEFReader;
+    const ndefCtor = getNdefReaderCtor();
 
     if (!ndefCtor) {
       setTagMessage("Web NFC is not supported on this browser/device.");
@@ -446,54 +523,38 @@ export default function MemberProfile() {
       ndef.onreading = async (event) => {
         try {
           const firstRecord = event.message?.records?.[0];
-          const recordData = firstRecord?.data;
-
-          if (!recordData) {
-            setTagMessage("No NDEF URL payload found on tag.");
-            addDebugLog("verifyCounterScan:missing-record-data");
-            setIsVerifyingCounterScan(false);
-            return;
-          }
-
-          const payloadUrl = new TextDecoder().decode(recordData as ArrayBuffer);
-          const counterRaw = new URL(payloadUrl).searchParams.get("cnt");
-          const counter = Number(counterRaw);
+          const payload = decodeRecordPayload(firstRecord);
+          const counterRaw = payload ? new URL(payload).searchParams.get("cnt") : null;
+          let counter = Number(counterRaw);
 
           if (!Number.isInteger(counter) || counter < 0) {
-            setTagMessage("Counter mirror (cnt) not found or invalid on tag payload.");
-            addDebugLog("verifyCounterScan:invalid-counter", { payloadUrl, counterRaw });
-            setIsVerifyingCounterScan(false);
-            return;
+            const manualCounter = Number(manualCounterInput);
+            if (Number.isInteger(manualCounter) && manualCounter >= 0) {
+              counter = manualCounter;
+              addDebugLog("verifyCounterScan:manual-counter-fallback", {
+                payload,
+                counter,
+              });
+            } else {
+              setTagMessage("Counter mirror (cnt) missing. Use tester read/write or provide manual counter.");
+              addDebugLog("verifyCounterScan:invalid-counter", {
+                payload,
+                counterRaw,
+                manualCounterInput,
+              });
+              setIsVerifyingCounterScan(false);
+              return;
+            }
           }
 
           addDebugLog("verifyCounterScan:payload-parsed", {
             serialNumber: event.serialNumber,
             counter,
-            payloadUrl,
+            payload,
+            recordType: firstRecord?.recordType,
           });
 
-          const response = await fetch("/api/member/tag/scan", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              uid: event.serialNumber || undefined,
-              counter,
-            }),
-          });
-
-          const result = await response.json();
-
-          if (!response.ok && response.status !== 409) {
-            setTagMessage(result?.error || "Counter scan verification failed.");
-            addDebugLog("verifyCounterScan:api-error", { status: response.status, result });
-            setIsVerifyingCounterScan(false);
-            return;
-          }
-
-          setLastScanResult(result as ScanVerificationResult);
-          setTagMessage(result?.message || "Scan verified.");
-          addDebugLog("verifyCounterScan:api-success", { status: response.status, result });
-          await loadTagStatus();
+          await submitCounterScan(event.serialNumber || undefined, counter);
         } catch {
           setTagMessage("Unable to process scanned payload.");
           addDebugLog("verifyCounterScan:processing-error");
@@ -512,7 +573,86 @@ export default function MemberProfile() {
       addDebugLog("verifyCounterScan:scan-start-error");
       setIsVerifyingCounterScan(false);
     }
-  }, [addDebugLog, loadTagStatus]);
+  }, [addDebugLog, decodeRecordPayload, getNdefReaderCtor, manualCounterInput, submitCounterScan]);
+
+  const runTesterRead = useCallback(async () => {
+    const ndefCtor = getNdefReaderCtor();
+
+    if (!ndefCtor) {
+      setTagMessage("Web NFC is not supported on this browser/device.");
+      addDebugLog("runTesterRead:unsupported");
+      return;
+    }
+
+    setIsTesterReading(true);
+    setTagMessage("Tester read started. Tap a tag now.");
+    addDebugLog("runTesterRead:start");
+
+    try {
+      const ndef = new ndefCtor();
+      await ndef.scan();
+
+      ndef.onreading = (event) => {
+        const firstRecord = event.message?.records?.[0];
+        const payload = decodeRecordPayload(firstRecord);
+
+        const readResult = {
+          serialNumber: event.serialNumber || null,
+          recordType: firstRecord?.recordType || null,
+          mediaType: firstRecord?.mediaType || null,
+          payload,
+        };
+
+        setTesterReadResult(readResult);
+        addDebugLog("runTesterRead:success", readResult);
+        setTagMessage("Tester read success.");
+        setIsTesterReading(false);
+      };
+
+      ndef.onreadingerror = () => {
+        setTagMessage("Tester read error. Try again.");
+        addDebugLog("runTesterRead:error");
+        setIsTesterReading(false);
+      };
+    } catch {
+      setTagMessage("Unable to start tester read.");
+      addDebugLog("runTesterRead:scan-start-error");
+      setIsTesterReading(false);
+    }
+  }, [addDebugLog, decodeRecordPayload, getNdefReaderCtor]);
+
+  const runTesterWrite = useCallback(async () => {
+    const ndefCtor = getNdefReaderCtor();
+
+    if (!ndefCtor) {
+      setTagMessage("Web NFC is not supported on this browser/device.");
+      addDebugLog("runTesterWrite:unsupported");
+      return;
+    }
+
+    setIsTesterWriting(true);
+    setTagMessage("Tester write started. Tap a writable tag now.");
+    addDebugLog("runTesterWrite:start", { testerUrlValue });
+
+    try {
+      const ndef = new ndefCtor();
+      if (!ndef.write) {
+        setTagMessage("Web NFC write is not supported on this browser/device.");
+        addDebugLog("runTesterWrite:no-write-method");
+        setIsTesterWriting(false);
+        return;
+      }
+
+      await ndef.write(testerUrlValue);
+      setTagMessage("Tester write success.");
+      addDebugLog("runTesterWrite:success", { testerUrlValue });
+      setIsTesterWriting(false);
+    } catch {
+      setTagMessage("Tester write failed. Tag may be read-only or browser denied write.");
+      addDebugLog("runTesterWrite:error", { testerUrlValue });
+      setIsTesterWriting(false);
+    }
+  }, [addDebugLog, getNdefReaderCtor, testerUrlValue]);
 
   useEffect(() => {
     if (!user) {
@@ -1054,6 +1194,17 @@ export default function MemberProfile() {
                       {isVerifyingCounterScan ? "Waiting for scan tap..." : "Verify Counter Scan via API"}
                     </button>
 
+                    <div>
+                      <label className="text-xs text-[#64748b] uppercase tracking-wide">Manual counter fallback</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={manualCounterInput}
+                        onChange={(event) => setManualCounterInput(event.target.value)}
+                        className="mt-1 w-full border border-[#e2e8f0] rounded px-3 py-2 text-sm"
+                      />
+                    </div>
+
                     {lastScanResult ? (
                       <div className="text-xs text-[#64748b] space-y-1 border border-[#e2e8f0] rounded p-2">
                         <p><span className="font-semibold">Last scan status:</span> {lastScanResult.status}</p>
@@ -1061,6 +1212,42 @@ export default function MemberProfile() {
                         <p><span className="font-semibold">Total scans:</span> {lastScanResult.scan_count}</p>
                       </div>
                     ) : null}
+
+                    <div className="pt-2 border-t border-[#e2e8f0] space-y-2">
+                      <label className="text-xs text-[#64748b] uppercase tracking-wide">NFC tester URL payload</label>
+                      <input
+                        type="text"
+                        value={testerUrlValue}
+                        onChange={(event) => setTesterUrlValue(event.target.value)}
+                        className="w-full border border-[#e2e8f0] rounded px-3 py-2 text-sm"
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                          onClick={() => void runTesterRead()}
+                          disabled={isTesterReading || isTesterWriting}
+                        >
+                          {isTesterReading ? "Tester reading..." : "Tester Read Tag"}
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs bg-white text-[#1e293b] border border-[#e2e8f0] px-3 py-1 rounded-md"
+                          onClick={() => void runTesterWrite()}
+                          disabled={isTesterWriting || isTesterReading || !testerUrlValue.trim()}
+                        >
+                          {isTesterWriting ? "Tester writing..." : "Tester Write Tag"}
+                        </button>
+                      </div>
+                      {testerReadResult ? (
+                        <div className="text-xs text-[#64748b] space-y-1 border border-[#e2e8f0] rounded p-2">
+                          <p><span className="font-semibold">Serial:</span> {testerReadResult.serialNumber || "N/A"}</p>
+                          <p><span className="font-semibold">Record type:</span> {testerReadResult.recordType || "N/A"}</p>
+                          <p><span className="font-semibold">Media type:</span> {testerReadResult.mediaType || "N/A"}</p>
+                          <p><span className="font-semibold">Payload:</span> {testerReadResult.payload || "N/A"}</p>
+                        </div>
+                      ) : null}
+                    </div>
 
                     <div className="pt-2 border-t border-[#e2e8f0] space-y-2">
                       <label className="text-xs text-[#64748b] uppercase tracking-wide">Deactivate reason</label>
@@ -1106,7 +1293,7 @@ export default function MemberProfile() {
                       ) : (
                         <ul className="space-y-1">
                           {debugLogs.map((line, index) => (
-                            <li key={`${line}-${index}`} className="break-words">{line}</li>
+                            <li key={`${line}-${index}`} className="wrap-break-word">{line}</li>
                           ))}
                         </ul>
                       )}
