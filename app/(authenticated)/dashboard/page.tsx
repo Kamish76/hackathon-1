@@ -14,7 +14,6 @@ import {
   LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 
 function DashboardContent() {
@@ -234,9 +233,5 @@ function DashboardContent() {
 }
 
 export default function AdminDashboard() {
-  return (
-    <ProtectedRoute>
-      <DashboardContent />
-    </ProtectedRoute>
-  );
+  return <DashboardContent />;
 }
