@@ -67,7 +67,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message, details: error.data }, { status: error.status });
     }
 
-    return NextResponse.json({ error: "Failed to register tag with NFC API." }, { status: 502 });
+    const message = error instanceof Error ? error.message : "Unknown NFC API error.";
+    return NextResponse.json(
+      { error: "Failed to register tag with NFC API.", details: { cause: message } },
+      { status: 502 }
+    );
   }
 
   const updatedUid = normalizeUid(externalResponse.uid || normalizedUid);

@@ -24,15 +24,25 @@ export async function callNfcApi<T>(path: string, init?: RequestInit): Promise<T
   const baseUrl = getNfcApiBaseUrl();
   const apiKey = process.env.NFC_API_KEY;
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(apiKey ? { "x-api-key": apiKey } : {}),
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(apiKey ? { "x-api-key": apiKey } : {}),
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed.";
+    throw new NfcApiError(`Unable to reach NFC API: ${message}`, 503, {
+      path,
+      baseUrl,
+      cause: message,
+    });
+  }
 
   const text = await response.text();
   let data: unknown = null;
