@@ -1,7 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ScanLine, ClipboardCheck, Users, Activity, UserCheck, Clock } from 'lucide-react';
+import { ScanLine, ClipboardCheck, Users, Activity, UserCheck, Clock, MapPin } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import OfficerSidebar from '@/components/OfficerSidebar';
 import { createClient } from '@/lib/supabase/client';

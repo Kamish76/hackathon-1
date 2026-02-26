@@ -11,11 +11,11 @@ type ScanPayload = {
 };
 
 type ScanResponse = {
-  status: "first_scan" | "valid" | "skipped_scans" | "clone_detected";
+  status: "first_scan" | "valid" | "skipped_scans" | "clone_detected" | "cnt_missing_testing_mode";
   message: string;
-  expected_counter: number;
-  received_counter: number;
-  scan_count: number;
+  expected_counter?: number;
+  received_counter?: number;
+  scan_count?: number;
   uid: string;
 };
 
@@ -42,7 +42,13 @@ function isScanResponse(value: unknown): value is ScanResponse {
   }
 
   const status = (value as { status?: unknown }).status;
-  return status === "first_scan" || status === "valid" || status === "skipped_scans" || status === "clone_detected";
+  return (
+    status === "first_scan" ||
+    status === "valid" ||
+    status === "skipped_scans" ||
+    status === "clone_detected" ||
+    status === "cnt_missing_testing_mode"
+  );
 }
 
 async function insertAccessEvent(params: {
@@ -124,7 +130,8 @@ export async function POST(request: NextRequest) {
 
   const rawUid = payload.uid?.trim() ?? "";
   const gateId = payload.gate_id?.trim() ?? "";
-  const counter = Number(payload.counter);
+  const parsedCounter = Number(payload.counter);
+  const hasCounter = Number.isInteger(parsedCounter) && parsedCounter >= 0;
   const memberCode = payload.member_code?.trim();
 
   if (!rawUid) {
@@ -133,10 +140,6 @@ export async function POST(request: NextRequest) {
 
   if (!gateId) {
     return NextResponse.json({ error: "gate_id is required." }, { status: 400 });
-  }
-
-  if (!Number.isInteger(counter) || counter < 0) {
-    return NextResponse.json({ error: "counter must be a non-negative integer." }, { status: 400 });
   }
 
   const { data: gate, error: gateError } = await adminClient
@@ -158,30 +161,38 @@ export async function POST(request: NextRequest) {
   let scanResult: ScanResponse;
   let statusCode = 200;
 
-  try {
-    scanResult = await callNfcApi<ScanResponse>("/api/scan", {
-      method: "POST",
-      body: JSON.stringify({
-        uid: normalizedUid,
-        counter,
-        ...(memberCode ? { member_code: memberCode } : {}),
-      }),
-    });
-  } catch (error) {
-    if (error instanceof NfcApiError) {
-      if (error.status === 409 && isScanResponse(error.data)) {
-        scanResult = error.data;
-        statusCode = 409;
+  if (hasCounter) {
+    try {
+      scanResult = await callNfcApi<ScanResponse>("/api/scan", {
+        method: "POST",
+        body: JSON.stringify({
+          uid: normalizedUid,
+          counter: parsedCounter,
+          ...(memberCode ? { member_code: memberCode } : {}),
+        }),
+      });
+    } catch (error) {
+      if (error instanceof NfcApiError) {
+        if (error.status === 409 && isScanResponse(error.data)) {
+          scanResult = error.data;
+          statusCode = 409;
+        } else {
+          return NextResponse.json({ error: error.message, details: error.data }, { status: error.status });
+        }
       } else {
-        return NextResponse.json({ error: error.message, details: error.data }, { status: error.status });
+        const message = error instanceof Error ? error.message : "Unknown NFC API error.";
+        return NextResponse.json(
+          { error: "Failed to verify scan with NFC API.", details: { cause: message } },
+          { status: 502 }
+        );
       }
-    } else {
-      const message = error instanceof Error ? error.message : "Unknown NFC API error.";
-      return NextResponse.json(
-        { error: "Failed to verify scan with NFC API.", details: { cause: message } },
-        { status: 502 }
-      );
     }
+  } else {
+    scanResult = {
+      status: "cnt_missing_testing_mode",
+      message: "Counter missing. Recorded in testing mode without anti-clone verification.",
+      uid: normalizedUid,
+    };
   }
 
   const { data: person, error: personError } = await adminClient
@@ -226,8 +237,10 @@ export async function POST(request: NextRequest) {
     metadata: {
       source: "officer_scan",
       nfc_status: scanResult.status,
-      expected_counter: scanResult.expected_counter,
-      received_counter: scanResult.received_counter,
+      expected_counter: scanResult.expected_counter ?? null,
+      received_counter: scanResult.received_counter ?? null,
+      supplied_counter: hasCounter ? parsedCounter : null,
+      counter_missing_testing_mode: !hasCounter,
       uid: scanResult.uid,
       supplied_member_code: memberCode ?? null,
       account_linked: accountLinked,
@@ -261,6 +274,7 @@ export async function POST(request: NextRequest) {
         is_linked: accountLinked,
         auth_user_id: authUser?.id ?? typedPerson.linked_user_id,
       },
+      testing_mode: !hasCounter,
       access_event: insertResult.event,
     },
     { status: statusCode }
