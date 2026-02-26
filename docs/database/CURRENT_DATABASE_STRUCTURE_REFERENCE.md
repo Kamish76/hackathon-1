@@ -2,7 +2,7 @@
 
 **Source of truth:** `docs/SCHOOL_INGRESS_EGRESS_INIT.sql`  
 **Last Updated:** 2026-02-26  
-**Applied Migrations:** 01, 02, 03, 04
+**Applied Migrations:** 01, 02, 03, 04, 05
 
 ## 1) Module Summary
 This schema adds an ingress/egress tracking module with:
@@ -307,7 +307,7 @@ Conditional FKs (constraint names):
   - Returns whether user has active operator role (SECURITY DEFINER, bypasses RLS)
   - `Officer` check matches `operator_role IN ('Officer', 'Taker', 'Admin')` — `'Taker'` retained for backward compatibility with pre-migration 03 rows
   - `Admin` check matches `operator_role = 'Admin'` only
-  - Updated by migration 02 (fix RLS recursion), migration 03 (add Officer), migration 04 (add Taker compat)
+  - Updated by migration 02 (fix RLS recursion), migration 03 (add Officer), migration 04 (add Taker compat), migration 05 (fix Taker alias in RLS policy calls)
 - `public.prevent_duplicate_direction()`
   - Anti-passback trigger guard for `access_events`
   - Prevents consecutive identical directions unless manual override
@@ -363,7 +363,7 @@ RLS is enabled on:
 - `auth_users`
 
 Policy pattern summary:
-- Taker role: read/insert operational records
+- Officer/Taker role: read/insert operational records (note: existing policies pass `'Taker'` as the role argument — `has_school_operator_role` accepts both `'Taker'` and `'Officer'` as equivalent)
 - Admin role: full mutation on configuration/role tables and privileged updates
 - Enforcement helper: `public.has_school_operator_role(auth.uid(), <role>)`
 
@@ -380,6 +380,7 @@ Default gates inserted idempotently:
 | 02 | `02_fix_school_operator_roles_rls_recursion.sql` | Replaces `has_school_operator_role` with a version that avoids infinite RLS recursion by using `SECURITY DEFINER`. Initially authored for `'Taker'`; updated by migration 03. |
 | 03 | `03_rename_taker_to_officer.sql` | Drops all check constraints on `school_operator_roles` dynamically, renames existing `operator_role = 'Taker'` rows to `'Officer'`, re-adds constraint as `CHECK (operator_role IN ('Admin', 'Officer'))`, and recreates `has_school_operator_role` for the new value. |
 | 04 | `04_fix_officer_rpc_taker_compat.sql` | Patches `has_school_operator_role` so the `Officer` role check also matches legacy `'Taker'` rows (backward compatibility for accounts not yet migrated by 03). Safe to run multiple times. |
+| 05 | `05_fix_rls_taker_role_alias.sql` | Re-applies `has_school_operator_role` so that `p_role IN ('Officer','Taker')` both resolve correctly. Fixes the RLS policy `person_registry_select_operator` (and similar policies on other tables) which pass `p_role='Taker'` — after migration 03 these returned `false` for everyone, hiding all rows. |
 
 ## 11) Operational Notes
 - Script is additive and designed to be idempotent.
