@@ -334,6 +334,42 @@ $$;
 -- --------------------------------------------------------------------------
 -- TRIGGERS
 -- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.prevent_duplicate_direction()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_last_direction text;
+BEGIN
+  IF NEW.is_manual_override THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT ae.direction
+    INTO v_last_direction
+  FROM public.access_events ae
+  WHERE ae.person_id = NEW.person_id
+  ORDER BY ae.event_timestamp DESC
+  LIMIT 1;
+
+  IF v_last_direction IS NOT NULL AND v_last_direction = NEW.direction THEN
+    RAISE EXCEPTION 'Anti-passback violation: last direction was %, new direction cannot also be %', v_last_direction, NEW.direction;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
 DROP TRIGGER IF EXISTS trg_person_registry_updated_at ON public.person_registry;
 CREATE TRIGGER trg_person_registry_updated_at
 BEFORE UPDATE ON public.person_registry
