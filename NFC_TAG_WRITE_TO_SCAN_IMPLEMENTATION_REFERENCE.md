@@ -12,6 +12,20 @@ It is designed for replication in a new system while preserving the same archite
 
 ---
 
+## Why NFC Is a Good Fit for This Project
+
+NFC (Near Field Communication) passive tags are the primary credential medium in this system for several practical reasons:
+
+- **Cost**: Passive NFC stickers and cards are inexpensive (typically a few cents to under a dollar per tag). This keeps the cost of issuing and re-issuing credentials very low, especially at school or event scale.
+- **Lightweight and compact**: NFC tags require no battery or onboard power. They are thin stickers or cards that can be attached to a student ID, lanyard, or wristband without adding meaningful weight or bulk.
+- **Easily replaceable**: Because tags are cheap and carry only a UUID payload (no sensitive personal data on the tag itself), a lost or damaged tag can be deactivated in the system and a new one programmed in seconds. The two-phase `prepare → confirm` write flow is specifically designed to make re-programming safe and fast.
+- **No contact required**: A brief tap (a few centimeters) is enough to read the tag. This supports high-throughput gate scans with minimal user friction.
+- **QR fallback keeps the architecture open**: The same `tag_id` UUID is used for both NFC and QR code payloads, so the system degrades gracefully on devices that do not support Web NFC. This means NFC is not a hard dependency — it is the preferred fast path, not a single point of failure.
+
+In short, NFC tags are well-suited here because the low per-unit cost makes bulk deployment viable, the lack of a battery eliminates maintenance overhead, and the ease of replacement reduces the operational burden when tags are lost or worn out.
+
+---
+
 ## 1. End-to-End Architecture
 
 ### 1.1 Core Idea
