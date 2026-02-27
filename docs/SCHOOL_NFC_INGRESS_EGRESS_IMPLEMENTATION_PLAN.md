@@ -1,7 +1,7 @@
 # School-wide NFC Ingress/Egress Web System
 
-**Version:** v0.1 (Living Plan)  
-**Last Updated:** 2026-02-26
+**Version:** v0.2 (Living Plan)  
+**Last Updated:** 2026-02-27
 
 ## 1) Goal
 Build a web-based system to track **IN/OUT** movement for:
@@ -53,7 +53,43 @@ Operator roles:
 
 ---
 
-## 4) Technical Direction
+## 4) Why NFC Is the Best Credential Technology for This Use Case
+
+NFC (Near Field Communication) tags are the ideal physical credential for a school ingress/egress system for the following reasons:
+
+### Cost
+- NFC tags are inexpensive — typically **under $1 USD per tag** when purchased in bulk.
+- The low per-unit cost makes it feasible to issue credentials to every student, staff member, and visitor without a significant budget impact.
+- Replacement credentials are affordable enough that lost or damaged tags are a minor operational cost, not a major incident.
+
+### Size and Form Factor
+- NFC tags are **extremely small** — they can be embedded inside a standard ID card, key fob, wristband, or sticker.
+- Their compact size means they can be worn or carried without inconvenience, and they integrate naturally into existing school ID card programs.
+
+### Weight
+- NFC tags are **virtually weightless**, adding no meaningful burden for students or staff who carry them all day.
+- This makes compliance much easier compared to heavier hardware tokens or dedicated reader devices.
+
+### Easy to Buy and Replace
+- NFC tags are **widely available** from consumer electronics retailers and online marketplaces worldwide.
+- When a credential is lost, stolen, or damaged, the school can purchase and provision a replacement tag immediately — no specialized vendor or lengthy procurement process required.
+- The two-phase write flow in this system (prepare → write → confirm) is designed specifically to make tag replacement safe and auditable.
+
+### Summary
+
+| Factor | NFC Tag | Printed QR Card | Barcode Card | Biometric |
+|---|---|---|---|---|
+| Cost per credential | < $1 | ~$0.10 (reprint required) | ~$0.10 (reprint required) | High |
+| Tap speed | < 1 second | Requires camera scan | Requires scanner | Slow |
+| Durability | High | Low (fades/tears) | Medium | N/A |
+| User replacement ease | Buy anywhere | Reprint only | Reprint only | N/A |
+| Privacy (no visible ID) | ✅ | ❌ | ❌ | ⚠️ High privacy risk |
+
+NFC offers the best overall balance of cost, speed, durability, and user convenience for a school gate access system.
+
+---
+
+## 5) Technical Direction
 - **Frontend:** Web app (dashboard + gate scan UI)
 - **NFC Input:** Web NFC API (supported browsers/devices)
 - **Backend:** API + relational database with immutable event history
@@ -64,7 +100,7 @@ Operator roles:
 
 ---
 
-## 5) Minimum Data Model
+## 6) Minimum Data Model
 - `persons`
 - `credentials`
 - `gates`
@@ -77,7 +113,7 @@ Operator roles:
 
 ---
 
-## 6) Non-Functional Requirements
+## 7) Non-Functional Requirements
 - Offline-capable scan queue + background sync
 - Idempotent sync to prevent duplicate events
 - Clock/timezone consistency across gate devices
@@ -86,7 +122,7 @@ Operator roles:
 
 ---
 
-## 7) Rollout Phases
+## 8) Rollout Phases
 ### Sprint 1
 - Core entities, auth, role permissions
 - Person and credential management
@@ -110,7 +146,7 @@ Operator roles:
 
 ---
 
-## 8) Open Questions (to review weekly)
+## 9) Open Questions (to review weekly)
 1. Is passenger-level scanning mandatory for all vehicles?
 2. Are manifests required for school buses/service vehicles?
 3. What exact devices will Takers use at each gate?
@@ -120,7 +156,7 @@ Operator roles:
 
 ---
 
-## 9) Success Metrics
+## 10) Success Metrics
 - Scan success rate
 - Duplicate/invalid scan rate
 - Average gate processing time
@@ -129,12 +165,13 @@ Operator roles:
 
 ---
 
-## 10) Change Log
+## 11) Change Log
 - **v0.1 (2026-02-26):** Initial draft created as a living implementation plan.
+- **v0.2 (2026-02-27):** Added NFC technology rationale (section 4).
 
 ---
 
-## 11) Next Revision Notes (Fill as You Go)
+## 12) Next Revision Notes (Fill as You Go)
 - Decisions made this week:
 - Risks identified:
 - Scope changes approved:
